@@ -4,6 +4,10 @@
  * Ollama, OpenRouter, Groq y otros aceptan. Sin dependencias: usa fetch.
  */
 import { loadSystemPrompt, userMessage } from './prompt.js';
+import { randomUUID } from 'node:crypto';
+
+export const OPENCODE_USER_AGENT = 'vocab-cards/1.0.0';
+export const OPENCODE_SESSION_LIMIT = Object.freeze({ default: 50, min: 1, max: 1000 });
 
 export const PRESETS = {
   gemini:    { label: 'Google Gemini', style: 'openai',    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', keyEnv: 'GEMINI_API_KEY',    model: 'gemini-flash-latest' },
@@ -50,6 +54,29 @@ class AiError extends Error {
   constructor(message, status = 502) { super(message); this.status = status; }
 }
 
+function opencodeSessionLimit(value) {
+  if (value === undefined) return OPENCODE_SESSION_LIMIT.default;
+  if (!Number.isSafeInteger(value) || value < OPENCODE_SESSION_LIMIT.min || value > OPENCODE_SESSION_LIMIT.max) {
+    throw new AiError(`El límite de sesión de OpenCode Go debe ser un entero entre ${OPENCODE_SESSION_LIMIT.min} y ${OPENCODE_SESSION_LIMIT.max}.`, 400);
+  }
+  return value;
+}
+
+export function createOpenCodeSessionAllocator(createId = randomUUID) {
+  let id = '';
+  let requests = 0;
+  return limit => {
+    if (!id || requests >= limit) {
+      id = createId();
+      requests = 0;
+    }
+    requests++;
+    return id;
+  };
+}
+
+const allocateOpenCodeSession = createOpenCodeSessionAllocator();
+
 function explain(status, detail, r) {
   if (status === 401 || status === 403) return `${r.label} rechazó la clave de API. Revísala en la configuración.`;
   if (status === 404) return `${r.label} no encontró el modelo "${r.model}" o la dirección configurada.`;
@@ -59,7 +86,7 @@ function explain(status, detail, r) {
 }
 
 /** Pide a la IA las entradas para los términos dados. Devuelve el texto de la respuesta. */
-export async function generateEntries(cfg, terms) {
+export async function generateEntries(cfg, terms, options = {}) {
   const r = resolveAi(cfg);
   if (!r.enabled) throw new AiError(r.reason, 503);
 
@@ -82,6 +109,12 @@ export async function generateEntries(cfg, terms) {
     body = { model: r.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
     if (r.jsonMode) body.response_format = { type: 'json_object' };
     if (r.temperature !== null) body.temperature = r.temperature;
+  }
+
+  if (r.provider === 'opencode-go') {
+    const limit = opencodeSessionLimit(options.opencodeSessionRequestLimit);
+    headers['user-agent'] = OPENCODE_USER_AGENT;
+    headers['x-opencode-session'] = (options.allocateOpenCodeSession || allocateOpenCodeSession)(limit);
   }
 
   let res;

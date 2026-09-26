@@ -164,11 +164,11 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
 | DELETE | `/api/vocab/entries/:id` | `{ ok, total }` |
-| GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes }` |
+| GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, ai, opencodeSessionLimit: { default, min, max } }` |
 | POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin }` → `{ items, summary, importId? }` |
 | POST | `/api/admin/import-folder` | `{ mode, dryRun }` → igual que `import` |
 | GET | `/api/admin/imports` | Últimas 15 filas de `imports` |
-| POST | `/api/admin/ai/generate` | `{ term, hint, mode }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. |
+| POST | `/api/admin/ai/generate` | `{ term, hint, mode, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. Para `opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50. |
 
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.

@@ -87,6 +87,24 @@ Variables de entorno (`.env`):
 Las suscripciones web (ChatGPT Plus, la app de Gemini, Copilot) no incluyen
 acceso por API: se necesita una clave de API del proveedor.
 
+### Sesiones de OpenCode Go
+
+OpenCode Go recibe `User-Agent: vocab-cards/1.0.0` y un identificador opaco
+`x-opencode-session`. El servidor genera ese UUID: no contiene palabras ni
+datos de las tarjetas. En **Agregar tarjetas**, después de iniciar la sesión de
+administración, se puede configurar cuántas solicitudes comparten el mismo
+identificador (50 por defecto; entero entre 1 y 1000). El valor se guarda solo
+en `localStorage` de ese navegador y se valida otra vez en el servidor.
+
+Las solicitudes 1 a N usan el mismo UUID; antes de enviar la N+1 se genera uno
+nuevo. El contador y el UUID viven en memoria del proceso, son compartidos por
+la única instancia del servidor y se reinician al reiniciar Node. Si distintos
+navegadores envían límites diferentes, cada solicitud aplica su límite al
+contador compartido actual: reducirlo puede rotar en la siguiente solicitud y
+aumentarlo puede prolongar la sesión actual hasta el nuevo límite. Ninguna de
+estas cabeceras ni esta lógica se aplica a otros proveedores. Cada intento de
+envío cuenta, incluso si OpenCode Go devuelve un error o no responde.
+
 ## Despliegue
 
 **Docker**

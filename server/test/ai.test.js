@@ -4,7 +4,7 @@ import http from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveAi, generateEntries } from '../ai.js';
+import { resolveAi, generateEntries, createOpenCodeSessionAllocator, OPENCODE_USER_AGENT } from '../ai.js';
 
 const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENCODE_API_KEY'];
 
@@ -76,6 +76,78 @@ test('genera con el prompt del archivo y descarta el bloque de razonamiento', as
   assert.equal(r.text, '{"entries":[{"head":"set up"}]}');
   assert.match(received.messages[0].content, /profesor de inglés/, 'usa prompts/vocab-entry.prompt.md como mensaje de sistema');
   assert.equal(received.messages[1].content, 'LISTA:\nset up (configurar)');
+});
+
+test('OpenCode Go envía User-Agent y una sesión opaca estable dentro del límite', async t => {
+  isolateKeyEnv(t, { OPENCODE_API_KEY: 'prueba' });
+  const headers = [];
+  const { server, url } = await mockProvider((body, req, res) => {
+    headers.push(req.headers);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"message":{"content":"{\\"entries\\":[]}"}}]}');
+  });
+  t.after(() => server.close());
+  const allocate = createOpenCodeSessionAllocator(() => '11111111-1111-4111-8111-111111111111');
+  const cfg = { ai: { provider: 'opencode-go', baseUrl: url } };
+  const options = { opencodeSessionRequestLimit: 2, allocateOpenCodeSession: allocate };
+
+  await generateEntries(cfg, [{ term: 'first' }], options);
+  await generateEntries(cfg, [{ term: 'second' }], options);
+
+  assert.equal(headers[0]['user-agent'], OPENCODE_USER_AGENT);
+  assert.equal(headers[0]['x-opencode-session'], '11111111-1111-4111-8111-111111111111');
+  assert.equal(headers[1]['x-opencode-session'], headers[0]['x-opencode-session']);
+  assert.doesNotMatch(headers[0]['x-opencode-session'], /first|second/);
+});
+
+test('OpenCode Go rota la sesión antes de la solicitud N+1', async t => {
+  isolateKeyEnv(t, { OPENCODE_API_KEY: 'prueba' });
+  const sessions = [];
+  const ids = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
+  const { server, url } = await mockProvider((body, req, res) => {
+    sessions.push(req.headers['x-opencode-session']);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"message":{"content":"{\\"entries\\":[]}"}}]}');
+  });
+  t.after(() => server.close());
+  const options = { opencodeSessionRequestLimit: 2, allocateOpenCodeSession: createOpenCodeSessionAllocator(() => ids.shift()) };
+  const cfg = { ai: { provider: 'opencode-go', baseUrl: url } };
+
+  await Promise.all([1, 2, 3].map(term => generateEntries(cfg, [{ term: String(term) }], options)));
+
+  assert.deepEqual(sessions.sort(), [
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  ].sort());
+});
+
+test('otros proveedores no reciben metadatos ni validación de sesión de OpenCode Go', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'prueba' });
+  let headers;
+  const { server, url } = await mockProvider((body, req, res) => {
+    headers = req.headers;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"choices":[{"message":{"content":"{\\"entries\\":[]}"}}]}');
+  });
+  t.after(() => server.close());
+
+  await generateEntries(
+    { ai: { provider: 'custom', baseUrl: url, model: 'm' } },
+    [{ term: 'x' }],
+    { opencodeSessionRequestLimit: 0 }
+  );
+
+  assert.equal(headers['x-opencode-session'], undefined);
+  assert.notEqual(headers['user-agent'], OPENCODE_USER_AGENT);
+});
+
+test('OpenCode Go rechaza límites de sesión fuera del rango seguro', async t => {
+  isolateKeyEnv(t, { OPENCODE_API_KEY: 'prueba' });
+  await assert.rejects(
+    generateEntries({ ai: { provider: 'opencode-go' } }, [{ term: 'x' }], { opencodeSessionRequestLimit: 1.5 }),
+    /entero entre 1 y 1000/
+  );
 });
 
 test('traduce los errores del proveedor a mensajes claros', async t => {

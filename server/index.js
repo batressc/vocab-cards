@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { ROOT, loadConfig } from './config.js';
 import { VocabStore, readFolderSources } from './vocab-store.js';
 import { createAuth } from './auth.js';
-import { generateEntries, publicAiInfo } from './ai.js';
+import { generateEntries, publicAiInfo, OPENCODE_SESSION_LIMIT } from './ai.js';
 
 // --dev: Vite sirve el frontend con recarga en caliente. Sin --dev: se sirve dist/ (npm run build).
 const DEV = process.argv.includes('--dev');
@@ -61,7 +61,14 @@ admin.use(writeLimiter, auth.require);
 // Para que la pantalla de carga valide la clave antes de trabajar.
 admin.get('/check', async (req, res) => {
   const cfg = await loadConfig();
-  res.json({ ok: true, total: store.size, dataFolder: cfg.dataFolderSetting, maxImportBytes: cfg.maxImportBytes });
+  res.json({
+    ok: true,
+    total: store.size,
+    dataFolder: cfg.dataFolderSetting,
+    maxImportBytes: cfg.maxImportBytes,
+    ai: publicAiInfo(cfg),
+    opencodeSessionLimit: OPENCODE_SESSION_LIMIT
+  });
 });
 
 // Texto pegado o archivos subidos: { sources: [{ name, text }], mode, dryRun }
@@ -100,7 +107,9 @@ admin.post('/ai/generate', aiLimiter, json('8kb'), async (req, res) => {
   if (!term) return res.status(400).json({ error: 'Escribe la palabra o frase que quieres agregar.' });
   try {
     const cfg = await loadConfig();
-    const ai = await generateEntries(cfg, [{ term, hint }]);
+    const ai = await generateEntries(cfg, [{ term, hint }], {
+      opencodeSessionRequestLimit: req.body?.opencodeSessionRequestLimit
+    });
     const source = `IA · ${ai.label}`;
     const result = store.plan([{ name: source, text: ai.text }], asMode(req.body?.mode), { withEntries: true });
     res.json({ provider: ai.provider, label: ai.label, model: ai.model, source, text: ai.text, ...result });

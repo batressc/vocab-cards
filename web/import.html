@@ -36,6 +36,16 @@
     <button type="button" class="link-btn" id="logout">Cambiar clave</button>
   </p>
 
+  <section class="panel" id="aiSettingsPanel" hidden aria-labelledby="aiSettingsTitle">
+    <h2 id="aiSettingsTitle">Configuración de OpenCode Go</h2>
+    <form id="aiSettingsForm" class="settings-form">
+      <label for="opencodeSessionLimit">Solicitudes por sesión</label>
+      <input id="opencodeSessionLimit" type="number" inputmode="numeric" required>
+      <button class="btn" type="submit">Guardar configuración</button>
+    </form>
+    <p class="hint" id="aiSettingsHint"></p>
+  </section>
+
   <!-- Importación -->
   <section class="panel" id="importPanel" hidden aria-labelledby="importTitle">
     <h2 id="importTitle" class="sr-only">Contenido a importar</h2>

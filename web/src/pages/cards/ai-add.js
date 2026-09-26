@@ -1,6 +1,6 @@
 /* "Crear tarjeta con IA" desde la búsqueda: barra de sugerencia, diálogo,
    generación, vista previa y guardado. */
-import { $, esc, toast } from '../../shared/utils.js';
+import { $, esc, store, toast, OPENCODE_SESSION_LIMIT_KEY } from '../../shared/utils.js';
 import { meta, api, authed, cardHTML, flip, speak, applyMeta, resetFeed, onFirstPage } from './app.js';
 
 const ICON_SPARK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.4 2.4M15.3 15.3l2.4 2.4M6.3 17.7l2.4-2.4M15.3 8.7l2.4-2.4"/></svg>';
@@ -74,7 +74,11 @@ async function generate(){
   $('#aiActions').hidden = true;
   $('#aiBody').innerHTML = `<p class="ai-status"><span class="spinner" aria-hidden="true"></span>Generando la tarjeta con ${esc(info.label || 'la IA')}… suele tardar entre 5 y 30 segundos.</p>`;
   try {
-    const r = await authed('ai/generate', { method:'POST', body: JSON.stringify({ term, hint: $('#aiHint').value.trim(), mode:'update' }) }, 'api/admin');
+    const opencodeSessionRequestLimit = store.get(OPENCODE_SESSION_LIMIT_KEY);
+    const r = await authed('ai/generate', {
+      method:'POST',
+      body: JSON.stringify({ term, hint: $('#aiHint').value.trim(), mode:'update', opencodeSessionRequestLimit })
+    }, 'api/admin');
     ai.result = r;
     renderPreview(r);
   } catch (err) {

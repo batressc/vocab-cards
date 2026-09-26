@@ -17,6 +17,7 @@ export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /** Clave de administración guardada en este navegador. */
 export const ADMIN_TOKEN_KEY = 'vocab-admin-token';
+export const OPENCODE_SESSION_LIMIT_KEY = 'vocab-opencode-session-limit';
 
 let toastTimer;
 /** Mensaje breve en la parte inferior de la pantalla (requiere un #toast en la página). */

@@ -1,7 +1,7 @@
 /* Pantalla "Agregar tarjetas": texto pegado, archivos o carpeta del servidor.
    Flujo: Revisar (dryRun) → tabla de resultados → Guardar. */
 
-import { $, esc, store, fmtDateTime, plural, toast, ADMIN_TOKEN_KEY } from '../../shared/utils.js';
+import { $, esc, store, fmtDateTime, plural, toast, ADMIN_TOKEN_KEY, OPENCODE_SESSION_LIMIT_KEY } from '../../shared/utils.js';
 
 const fmtSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
@@ -63,7 +63,36 @@ function showSession(){
   $('#sessionText').textContent = `Sesión de administración activa. ${plural(state.info.total, 'tarjeta guardada', 'tarjetas guardadas')}.`;
   $('#folderName').textContent = state.info.dataFolder;
   $('#limitHint').textContent = `Hasta ${fmtSize(state.info.maxImportBytes)} por archivo.`;
+  renderAiSettings();
 }
+
+function renderAiSettings(){
+  const panel = $('#aiSettingsPanel');
+  const limits = state.info.opencodeSessionLimit;
+  panel.hidden = state.info.ai?.provider !== 'opencode-go';
+  if (panel.hidden) return;
+  const input = $('#opencodeSessionLimit');
+  input.min = limits.min;
+  input.max = limits.max;
+  input.value = store.get(OPENCODE_SESSION_LIMIT_KEY, limits.default);
+  $('#aiSettingsHint').textContent = `Las solicitudes 1–N comparten una sesión; la N+1 inicia otra. Valor permitido: ${limits.min}–${limits.max}.`;
+}
+
+$('#aiSettingsForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = $('#opencodeSessionLimit');
+  const value = Number(input.value);
+  if (!Number.isSafeInteger(value) || value < Number(input.min) || value > Number(input.max)) {
+    input.setAttribute('aria-invalid', 'true');
+    $('#aiSettingsHint').textContent = `Escribe un número entero entre ${input.min} y ${input.max}.`;
+    input.focus();
+    return;
+  }
+  input.removeAttribute('aria-invalid');
+  store.set(OPENCODE_SESSION_LIMIT_KEY, value);
+  $('#aiSettingsHint').textContent = `Configuración guardada en este navegador: ${value} solicitudes por sesión.`;
+  toast('Configuración de OpenCode Go guardada.');
+});
 
 function logout(message){
   state.token = ''; state.info = null;
@@ -73,6 +102,7 @@ function logout(message){
   $('#importPanel').hidden = true;
   $('#resultPanel').hidden = true;
   $('#extraPanel').hidden = true;
+  $('#aiSettingsPanel').hidden = true;
   if (message) $('#authMsg').textContent = message;
   $('#token').value = '';
   $('#token').focus();
