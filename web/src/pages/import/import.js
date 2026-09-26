@@ -1,5 +1,5 @@
-/* Pantalla "Agregar tarjetas": texto pegado, archivos o carpeta del servidor.
-   Flujo: Revisar (dryRun) → tabla de resultados → Guardar. */
+/* Administración: configuración de IA y carga de datos.
+   Flujo de carga: Revisar (dryRun) → tabla de resultados → Guardar. */
 
 import {
   $, esc, store, fmtDateTime, plural, toast, findAiModel, resolveAiDefaultModel,
@@ -22,6 +22,7 @@ const KIND_LABEL = { phrasal:'Phrasal verb', idiom:'Modismo', phrase:'Frase', on
 const state = {
   token: store.get(ADMIN_TOKEN_KEY, ''),
   info: null,               // respuesta de /api/admin/check
+  adminTab: location.hash === '#data' ? 'data' : 'ai',
   tab: 'text',
   files: [],                // [{ file, text?, error? }]
   review: null,             // último resultado de revisión
@@ -61,13 +62,12 @@ async function login(token){
 function showSession(){
   $('#authPanel').hidden = true;
   $('#session').hidden = false;
-  $('#importPanel').hidden = false;
-  $('#extraPanel').hidden = false;
+  $('#adminWorkspace').hidden = false;
   $('#sessionText').textContent = `Sesión de administración activa. ${plural(state.info.total, 'tarjeta guardada', 'tarjetas guardadas')}.`;
   $('#folderName').textContent = state.info.dataFolder;
   $('#limitHint').textContent = `Hasta ${fmtSize(state.info.maxImportBytes)} por archivo.`;
   renderAiDefaultSettings();
-  renderAiSettings();
+  selectAdminTab(state.adminTab);
 }
 
 const MODEL_STAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>';
@@ -89,19 +89,42 @@ function renderAiDefaultSettings(){
     ? `Actual en este navegador: ${current.provider.label} · ${current.model.label}`
     : 'No hay un modelo predeterminado disponible.';
   $('#aiDefaultModels').innerHTML = providers.length ? providers.map(provider => `
-    <fieldset class="model-default-group">
-      <legend>${esc(provider.label)}</legend>
-      ${provider.models.map(model => {
+    <section class="provider-card" aria-labelledby="provider-${esc(provider.id)}">
+      <div class="provider-head">
+        <h3 id="provider-${esc(provider.id)}">${esc(provider.label)}</h3>
+        <span class="provider-state">Configurado</span>
+      </div>
+      <fieldset class="model-default-group">
+        <legend>Modelos disponibles</legend>
+        ${provider.models.map(model => {
         const active = provider.id === preferred?.provider && model.id === preferred?.model;
         return `<label class="model-default-option">
           <input type="radio" name="default-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${active ? ' checked' : ''}>
           <span>${esc(model.label)}${model.group ? `<small>${esc(model.group)}</small>` : ''}</span>
           <span class="model-default-star${active ? ' active' : ''}" title="${active ? 'Predeterminado actual' : 'No es el predeterminado'}">${MODEL_STAR}<span class="sr-only">${active ? 'Predeterminado actual' : ''}</span></span>
         </label>`;
-      }).join('')}
-      ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
-    </fieldset>`).join('') : '<p class="model-empty">No hay modelos disponibles. Revisa los proveedores configurados, sus claves y los errores del catálogo.</p>';
+        }).join('') || '<p class="model-empty">Este proveedor no devolvió modelos utilizables.</p>'}
+        ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
+      </fieldset>
+      ${providerSettings(provider.id)}
+    </section>`).join('') : '<p class="model-empty">No hay modelos disponibles. Revisa los proveedores configurados, sus claves y los errores del catálogo.</p>';
   $('#aiDefaultSave').disabled = !preferred;
+  renderAiSettings();
+}
+
+function providerSettings(providerId){
+  if (providerId !== 'opencode-go') {
+    return '<p class="provider-note">Las credenciales y conexiones de este proveedor se administran de forma segura en el servidor.</p>';
+  }
+  return `<div class="provider-settings">
+    <h4>Ajustes de OpenCode Go</h4>
+    <div class="settings-form">
+      <label for="opencodeSessionLimit">Solicitudes por sesión</label>
+      <input id="opencodeSessionLimit" type="number" inputmode="numeric" required>
+      <button class="btn" id="aiSettingsSave" type="button">Guardar configuración</button>
+    </div>
+    <p class="hint" id="aiSettingsHint"></p>
+  </div>`;
 }
 
 $('#aiModelsRefresh').addEventListener('click', async () => {
@@ -141,19 +164,17 @@ $('#aiDefaultForm').addEventListener('submit', e => {
 });
 
 function renderAiSettings(){
-  const panel = $('#aiSettingsPanel');
-  const limits = state.info.opencodeSessionLimit;
-  panel.hidden = !state.info.ai?.providers?.some(provider => provider.id === 'opencode-go');
-  if (panel.hidden) return;
   const input = $('#opencodeSessionLimit');
+  if (!input) return;
+  const limits = state.info.opencodeSessionLimit;
   input.min = limits.min;
   input.max = limits.max;
   input.value = store.get(OPENCODE_SESSION_LIMIT_KEY, limits.default);
   $('#aiSettingsHint').textContent = `Las solicitudes 1–N comparten una sesión; la N+1 inicia otra. Valor permitido: ${limits.min}–${limits.max}.`;
 }
 
-$('#aiSettingsForm').addEventListener('submit', e => {
-  e.preventDefault();
+$('#aiDefaultModels').addEventListener('click', e => {
+  if (!e.target.closest('#aiSettingsSave')) return;
   const input = $('#opencodeSessionLimit');
   const value = Number(input.value);
   if (!Number.isSafeInteger(value) || value < Number(input.min) || value > Number(input.max)) {
@@ -173,11 +194,8 @@ function logout(message){
   store.set(ADMIN_TOKEN_KEY, '');
   $('#authPanel').hidden = false;
   $('#session').hidden = true;
-  $('#importPanel').hidden = true;
+  $('#adminWorkspace').hidden = true;
   $('#resultPanel').hidden = true;
-  $('#extraPanel').hidden = true;
-  $('#aiDefaultPanel').hidden = true;
-  $('#aiSettingsPanel').hidden = true;
   if (message) $('#authMsg').textContent = message;
   $('#token').value = '';
   $('#token').focus();
@@ -191,6 +209,31 @@ $('#authForm').addEventListener('submit', e => {
 $('#logout').addEventListener('click', () => logout());
 
 /* ================= Pestañas ================= */
+const ADMIN_TABS = ['ai', 'data'];
+function selectAdminTab(name, focus = false){
+  state.adminTab = ADMIN_TABS.includes(name) ? name : 'ai';
+  for (const tabName of ADMIN_TABS) {
+    const tab = $(`#admin-tab-${tabName}`), pane = $(`#admin-pane-${tabName}`), on = tabName === state.adminTab;
+    tab.setAttribute('aria-selected', on);
+    tab.tabIndex = on ? 0 : -1;
+    pane.hidden = !on;
+    if (on && focus) tab.focus();
+  }
+  history.replaceState(null, '', state.adminTab === 'data' ? '#data' : '#ai');
+}
+
+document.querySelector('.admin-tabs').addEventListener('click', e => {
+  const tab = e.target.closest('[role=tab]');
+  if (tab) selectAdminTab(tab.id.replace('admin-tab-', ''));
+});
+document.querySelector('.admin-tabs').addEventListener('keydown', e => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const i = ADMIN_TABS.indexOf(state.adminTab);
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? ADMIN_TABS.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + ADMIN_TABS.length) % ADMIN_TABS.length;
+  selectAdminTab(ADMIN_TABS[next], true);
+});
+
 const TABS = ['text', 'files', 'folder'];
 function selectTab(name, focus){
   state.tab = name;

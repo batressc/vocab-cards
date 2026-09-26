@@ -306,7 +306,7 @@ function renderEnd(){
     end.innerHTML = `<p>${esc(feed.error)}</p><button type="button" class="btn" data-retry>Reintentar</button>`;
   } else if (feed.total === 0) {
     end.innerHTML = meta && meta.total === 0
-      ? '<p>Todavía no hay tarjetas guardadas.</p><a class="btn primary" href="import.html">Agregar tarjetas</a>'
+      ? '<p>Todavía no hay tarjetas guardadas.</p><a class="btn primary" href="import.html#data">Ir a Administración</a>'
       : '<p>Ninguna tarjeta coincide con estos filtros.</p><button type="button" class="btn" data-clear>Quitar filtros</button>';
   } else if (feed.done) {
     end.innerHTML = `<p>Llegaste al final: ${feed.total} tarjeta${feed.total === 1 ? '' : 's'}.</p>`;

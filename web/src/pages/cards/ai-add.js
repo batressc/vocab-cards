@@ -21,7 +21,7 @@ function renderAddBar(page){
   bar.innerHTML = `
     <span class="msg">${msg}</span>
     ${info.enabled ? `<button type="button" class="btn primary" data-ai-open>${ICON_SPARK}Crear con IA</button>` : ''}
-    <a class="btn" href="import.html">Agregar manualmente</a>
+    <a class="btn" href="import.html#data">Cargar datos</a>
     ${info.enabled ? '' : `<p class="why">Para crearla con IA, configura un proveedor en config.json. ${esc(info.reason || '')}</p>`}`;
   bar.hidden = false;
 }

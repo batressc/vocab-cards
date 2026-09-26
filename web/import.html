@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Agregar tarjetas · Tarjetas de inglés</title>
+<title>Administración · Tarjetas de inglés</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Noto+Sans:wght@400;500&display=swap" rel="stylesheet">
@@ -17,8 +17,8 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
       Volver a las tarjetas
     </a>
-    <h1>Agregar tarjetas</h1>
-    <p class="lead">Pega el JSON que generó la IA o sube archivos. Primero se revisa el contenido y después se guarda en la base de datos.</p>
+    <h1>Administración</h1>
+    <p class="lead">Configura la creación con IA y gestiona la carga de datos en un solo lugar.</p>
   </header>
 
   <!-- Acceso -->
@@ -36,33 +36,37 @@
     <button type="button" class="link-btn" id="logout">Cambiar clave</button>
   </p>
 
-  <section class="panel" id="aiDefaultPanel" hidden aria-labelledby="aiDefaultTitle">
-    <div class="model-catalog-head">
-      <h2 id="aiDefaultTitle">Modelo predeterminado</h2>
-      <button class="btn" id="aiModelsRefresh" type="button">Actualizar modelos</button>
+  <div id="adminWorkspace" hidden>
+    <div class="admin-tabs" role="tablist" aria-label="Secciones de administración">
+      <button type="button" role="tab" id="admin-tab-ai" aria-controls="admin-pane-ai" aria-selected="true">Configuración de IA</button>
+      <button type="button" role="tab" id="admin-tab-data" aria-controls="admin-pane-data" aria-selected="false" tabindex="-1">Carga de datos</button>
     </div>
-    <p class="catalog-status" id="aiCatalogStatus" aria-live="polite"></p>
-    <div class="catalog-errors" id="aiCatalogErrors"></div>
-    <p class="model-current" id="aiDefaultCurrent"></p>
-    <form id="aiDefaultForm">
-      <div class="model-default-list" id="aiDefaultModels"></div>
-      <button class="btn primary" id="aiDefaultSave" type="submit">Guardar como predeterminado</button>
-    </form>
-    <p class="hint" id="aiDefaultHint">Se guarda solo en este navegador. En el cuadro de creación puedes elegir temporalmente otro modelo.</p>
-  </section>
 
-  <section class="panel" id="aiSettingsPanel" hidden aria-labelledby="aiSettingsTitle">
-    <h2 id="aiSettingsTitle">Configuración de OpenCode Go</h2>
-    <form id="aiSettingsForm" class="settings-form">
-      <label for="opencodeSessionLimit">Solicitudes por sesión</label>
-      <input id="opencodeSessionLimit" type="number" inputmode="numeric" required>
-      <button class="btn" type="submit">Guardar configuración</button>
-    </form>
-    <p class="hint" id="aiSettingsHint"></p>
-  </section>
+    <section class="admin-pane" role="tabpanel" id="admin-pane-ai" aria-labelledby="admin-tab-ai">
+      <section class="panel ai-admin-panel" id="aiDefaultPanel" aria-labelledby="aiDefaultTitle">
+        <div class="model-catalog-head">
+          <div>
+            <h2 id="aiDefaultTitle">Proveedores y modelos</h2>
+            <p class="section-intro">Elige el modelo predeterminado y ajusta cada proveedor configurado.</p>
+          </div>
+          <button class="btn" id="aiModelsRefresh" type="button">Actualizar modelos</button>
+        </div>
+        <p class="catalog-status" id="aiCatalogStatus" aria-live="polite"></p>
+        <div class="catalog-errors" id="aiCatalogErrors"></div>
+        <p class="model-current" id="aiDefaultCurrent"></p>
+        <form id="aiDefaultForm">
+          <div class="provider-list" id="aiDefaultModels"></div>
+          <div class="model-save">
+            <button class="btn primary" id="aiDefaultSave" type="submit">Guardar modelo predeterminado</button>
+            <p class="hint" id="aiDefaultHint">Se guarda solo en este navegador. En el cuadro de creación puedes elegir temporalmente otro modelo.</p>
+          </div>
+        </form>
+      </section>
+    </section>
 
-  <!-- Importación -->
-  <section class="panel" id="importPanel" hidden aria-labelledby="importTitle">
+    <section class="admin-pane" role="tabpanel" id="admin-pane-data" aria-labelledby="admin-tab-data" hidden>
+      <!-- Importación -->
+      <section class="panel" id="importPanel" aria-labelledby="importTitle">
     <h2 id="importTitle" class="sr-only">Contenido a importar</h2>
     <div class="tabs" role="tablist" aria-label="Origen del contenido">
       <button type="button" role="tab" id="tab-text" aria-controls="pane-text" aria-selected="true">Pegar JSON</button>
@@ -100,10 +104,10 @@
       <button type="button" class="btn primary" id="saveBtn" disabled>Guardar</button>
       <span class="hint" id="actionHint">Revisa el contenido para poder guardarlo.</span>
     </div>
-  </section>
+      </section>
 
   <!-- Resultado -->
-  <section class="panel" id="resultPanel" hidden aria-live="polite" aria-labelledby="resultTitle">
+      <section class="panel" id="resultPanel" hidden aria-live="polite" aria-labelledby="resultTitle">
     <h2 id="resultTitle">Revisión</h2>
     <div class="summary" id="summary"></div>
     <div class="table-wrap">
@@ -112,10 +116,10 @@
         <tbody id="resultRows"></tbody>
       </table>
     </div>
-  </section>
+      </section>
 
   <!-- Respaldo e historial -->
-  <section class="panel" id="extraPanel" hidden aria-labelledby="historyTitle">
+      <section class="panel" id="extraPanel" aria-labelledby="historyTitle">
     <div class="extra-head">
       <h2 id="historyTitle">Últimas importaciones</h2>
       <a class="btn" href="api/vocab/export" download>
@@ -129,7 +133,9 @@
         <tbody id="historyRows"></tbody>
       </table>
     </div>
-  </section>
+      </section>
+    </section>
+  </div>
 </div>
 <div class="toast" id="toast" role="status"></div>
 <script type="module" src="/src/pages/import/import.js"></script>

@@ -1,4 +1,4 @@
-/* Pantalla "Agregar tarjetas": reutiliza los tokens de styles.css */
+/* Administración: reutiliza los tokens de base.css. */
 .page{max-width:1000px;margin:0 auto;padding:24px 20px 56px}
 .page-head{margin-bottom:18px}
 .back-link{display:inline-flex;align-items:center;gap:4px;color:var(--muted);text-decoration:none;font-size:14px}
@@ -26,8 +26,13 @@ code{font-size:12.5px;background:var(--soft);border-radius:4px;padding:1px 5px}
 .catalog-status{font-size:13px;color:var(--muted);margin:7px 0}
 .catalog-status.stale,.provider-stale{color:var(--warn)}
 .catalog-errors p{font-size:13px;color:var(--warn);margin:4px 0}
-.model-default-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:12px}
-.model-default-group{border:1px solid var(--line);border-radius:10px;margin:0;padding:7px 10px 9px;min-width:0}
+.section-intro{color:var(--muted);font-size:14px;margin:3px 0 0}
+.provider-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:14px 0}
+.provider-card{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--soft);min-width:0}
+.provider-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.provider-head h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:17px;margin:0}
+.provider-state{font-size:11px;font-weight:700;color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,var(--card));border-radius:999px;padding:3px 8px}
+.model-default-group{border:0;margin:0;padding:0;min-width:0}
 .model-default-group legend{padding:0 5px;font-size:13px;font-weight:700;color:var(--muted)}
 .model-default-option{display:flex;align-items:center;gap:8px;min-height:34px;padding:3px;border-radius:7px;cursor:pointer}
 .model-default-option:hover{background:var(--soft)}
@@ -39,11 +44,22 @@ code{font-size:12.5px;background:var(--soft);border-radius:4px;padding:1px 5px}
 .model-default-star.active svg{fill:currentColor}
 .model-empty{grid-column:1/-1;color:var(--warn);margin:0 0 4px}
 .provider-stale{font-size:11px;margin:5px 3px 0}
+.provider-settings{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
+.provider-settings h4{font-size:13px;margin:0 0 7px}
+.provider-note{border-top:1px solid var(--line);color:var(--muted);font-size:12px;margin:10px 0 0;padding-top:10px}
+.model-save{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.model-save .hint{margin:0;flex:1 1 280px}
+
+.admin-tabs{display:flex;gap:6px;margin-top:18px;padding:5px;background:color-mix(in srgb,var(--card) 75%,transparent);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+.admin-tabs [role=tab]{flex:1 1 180px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-weight:700;padding:10px 14px;white-space:nowrap;cursor:pointer}
+.admin-tabs [role=tab][aria-selected="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 5px color-mix(in srgb,var(--ink) 12%,transparent)}
+.admin-pane[hidden]{display:none}
 
 @media (max-width:520px){
   .page{padding-left:12px;padding-right:12px}
   .panel{padding:16px 14px}
-  .model-default-list{grid-template-columns:1fr}
+  .provider-list{grid-template-columns:1fr}
+  .admin-tabs [role=tab]{flex-basis:auto}
 }
 
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-4px 0 14px;overflow-x:auto}
