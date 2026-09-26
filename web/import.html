@@ -49,11 +49,12 @@
             <h2 id="aiDefaultTitle">Modelo predeterminado</h2>
             <p class="section-intro">Elige entre los modelos visibles. Este valor se comparte con todos los navegadores.</p>
           </div>
-          <button class="btn" id="aiModelsRefresh" type="button">Actualizar modelos</button>
+          <button class="btn" id="aiDefaultExpandAll" type="button" aria-expanded="false" aria-controls="aiDefaultModels">Expandir todos</button>
         </div>
-        <p class="catalog-status" id="aiCatalogStatus" aria-live="polite"></p>
-        <div class="catalog-errors" id="aiCatalogErrors"></div>
         <p class="model-current" id="aiDefaultCurrent"></p>
+        <div class="model-tools">
+          <label class="model-filter" for="aiDefaultFilter"><span>Filtrar modelos</span><input id="aiDefaultFilter" type="search" autocomplete="off" aria-controls="aiDefaultModels" placeholder="Etiqueta, id o grupo"></label>
+        </div>
         <form id="aiDefaultForm">
           <div class="provider-list" id="aiDefaultModels"></div>
           <div class="model-save">
@@ -63,8 +64,21 @@
         </form>
       </section>
       <section class="panel ai-admin-panel" id="aiCatalogPanel" aria-labelledby="aiCatalogTitle">
-        <h2 id="aiCatalogTitle">Catálogo completo</h2>
-        <p class="section-intro">Decide qué modelos aparecen para crear tarjetas y clasifícalos según su uso recomendado.</p>
+        <div class="model-catalog-head">
+          <div>
+            <h2 id="aiCatalogTitle">Catálogo completo</h2>
+            <p class="section-intro">Decide qué modelos aparecen para crear tarjetas y clasifícalos según su uso recomendado.</p>
+          </div>
+          <div class="model-head-actions">
+            <button class="btn" id="aiModelsRefresh" type="button">Actualizar modelos</button>
+            <button class="btn" id="aiCatalogExpandAll" type="button" aria-expanded="false" aria-controls="aiCatalogModels">Expandir todos</button>
+          </div>
+        </div>
+        <p class="catalog-status" id="aiCatalogStatus" aria-live="polite"></p>
+        <div class="catalog-errors" id="aiCatalogErrors"></div>
+        <div class="model-tools">
+          <label class="model-filter" for="aiCatalogFilter"><span>Filtrar modelos</span><input id="aiCatalogFilter" type="search" autocomplete="off" aria-controls="aiCatalogModels" placeholder="Etiqueta, id o grupo"></label>
+        </div>
         <form id="aiCatalogForm">
           <div class="provider-list" id="aiCatalogModels"></div>
           <div class="model-save">

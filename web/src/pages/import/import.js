@@ -28,7 +28,9 @@ const state = {
   review: null,             // último resultado de revisión
   reviewKey: null,          // firma del contenido revisado
   busy: false,
-  aiDraft: new Map()
+  aiDraft: new Map(),
+  aiFilters: { default:'', catalog:'' },
+  aiExpanded: { default:null, catalog:null }
 };
 
 /* ================= API ================= */
@@ -84,7 +86,7 @@ function resetAiDraft(){
 
 function accordion(provider, content, prefix, expanded = true){
   const id = `${prefix}-${provider.id.replace(/[^a-z0-9_-]/gi, '-')}`;
-  return `<section class="provider-card">
+  return `<section class="provider-card" data-provider="${esc(provider.id)}">
     <h3><button type="button" class="provider-toggle" aria-expanded="${expanded}" aria-controls="${esc(id)}">
       <span>${esc(provider.label)}</span>${CARET}
     </button></h3>
@@ -94,12 +96,64 @@ function accordion(provider, content, prefix, expanded = true){
 
 const categoryBadge = category => `<span class="model-category category-${esc(category)}">${esc(AI_CATEGORY_LABELS[category] || AI_CATEGORY_LABELS.unclassified)}</span>`;
 
+function reconcileExpanded(section, providers, initiallyExpanded){
+  if (state.aiExpanded[section] === null) state.aiExpanded[section] = new Set(initiallyExpanded);
+  else state.aiExpanded[section] = new Set([...state.aiExpanded[section]].filter(id => providers.some(provider => provider.id === id)));
+}
+
+function modelSearchText(provider, model){
+  return [provider.label, provider.id, model.label, model.id, model.group || ''].join(' ').toLocaleLowerCase('es');
+}
+
+function applyModelFilter(section){
+  const input = $(`#ai${section === 'default' ? 'Default' : 'Catalog'}Filter`);
+  const list = $(`#ai${section === 'default' ? 'Default' : 'Catalog'}Models`);
+  const query = input.value.trim().toLocaleLowerCase('es');
+  state.aiFilters[section] = input.value;
+  for (const card of list.querySelectorAll('.provider-card')) {
+    let matches = 0;
+    for (const row of card.querySelectorAll('[data-model-search]')) {
+      const match = !query || row.dataset.modelSearch.includes(query);
+      row.hidden = !match;
+      if (match) matches++;
+    }
+    const empty = card.querySelector('[data-filter-empty]');
+    if (empty) empty.hidden = !query || matches > 0;
+  }
+}
+
+function updateExpandAll(section){
+  const name = section === 'default' ? 'Default' : 'Catalog';
+  const buttons = [...$(`#ai${name}Models`).querySelectorAll('.provider-toggle')];
+  const control = $(`#ai${name}ExpandAll`);
+  const allExpanded = buttons.length > 0 && buttons.every(button => button.getAttribute('aria-expanded') === 'true');
+  control.disabled = !buttons.length;
+  control.setAttribute('aria-expanded', String(allExpanded));
+  control.textContent = allExpanded ? 'Contraer todos' : 'Expandir todos';
+}
+
+function toggleAllAccordions(section){
+  const name = section === 'default' ? 'Default' : 'Catalog';
+  const buttons = [...$(`#ai${name}Models`).querySelectorAll('.provider-toggle')];
+  const expand = !buttons.length || !buttons.every(button => button.getAttribute('aria-expanded') === 'true');
+  state.aiExpanded[section] = new Set();
+  for (const button of buttons) {
+    const content = document.getElementById(button.getAttribute('aria-controls'));
+    const provider = button.closest('.provider-card').dataset.provider;
+    content.hidden = !expand;
+    button.setAttribute('aria-expanded', String(expand));
+    if (expand) state.aiExpanded[section].add(provider);
+  }
+  updateExpandAll(section);
+}
+
 function renderAiDefaultSettings(){
   const panel = $('#aiDefaultPanel');
   const info = state.info.ai || {};
   const preferred = resolveAiDefaultModel(info);
   const current = findAiModel(info, preferred);
   const providers = Array.isArray(info.providers) ? info.providers : [];
+  reconcileExpanded('default', providers, [preferred?.provider || providers[0]?.id].filter(Boolean));
   panel.hidden = false;
   const fetched = info.fetchedAt ? fmtDateTime(info.fetchedAt) : '';
   $('#aiCatalogStatus').textContent = info.stale
@@ -111,40 +165,51 @@ function renderAiDefaultSettings(){
     ? `Predeterminado global: ${current.provider.label} · ${current.model.label}`
     : 'No hay un modelo predeterminado disponible.';
   if (info.defaultFallback) $('#aiDefaultCurrent').textContent += ' El valor guardado no está disponible; se usa este modelo como alternativa sin modificarlo.';
-  $('#aiDefaultModels').innerHTML = providers.length ? providers.map((provider, index) => accordion(provider, `
+  $('#aiDefaultModels').innerHTML = providers.length ? providers.map(provider => accordion(provider, `
       <fieldset class="model-default-group">
         <legend class="sr-only">Modelos visibles de ${esc(provider.label)}</legend>
-        ${provider.models.map(model => {
+         ${provider.models.map(model => {
         const active = provider.id === preferred?.provider && model.id === preferred?.model;
-        return `<label class="model-default-option">
+        return `<label class="model-default-option" data-model-search="${esc(modelSearchText(provider, model))}">
           <input type="radio" name="default-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${active ? ' checked' : ''}>
           <span><b>${esc(model.label)}</b><small>${esc(provider.label)}${model.group ? ` · ${esc(model.group)}` : ''}</small></span>
           ${categoryBadge(model.category)}
           <span class="model-default-star${active ? ' active' : ''}" title="${active ? 'Predeterminado actual' : 'No es el predeterminado'}">${MODEL_STAR}<span class="sr-only">${active ? 'Predeterminado actual' : ''}</span></span>
         </label>`;
         }).join('') || '<p class="model-empty">Este proveedor no devolvió modelos utilizables.</p>'}
+        <p class="model-empty filter-empty" data-filter-empty aria-live="polite" hidden>No hay modelos que coincidan con el filtro en este proveedor.</p>
         ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
       </fieldset>
       ${providerSettings(provider.id)}
-    `, 'default-provider', provider.id === preferred?.provider || (!preferred && index === 0))).join('') : '<p class="model-empty">No hay modelos visibles. Activa al menos uno en Catálogo completo para habilitar la creación con IA.</p>';
+    `, 'default-provider', state.aiExpanded.default.has(provider.id))).join('') : '<p class="model-empty">No hay modelos visibles. Activa al menos uno en Catálogo completo para habilitar la creación con IA.</p>';
   $('#aiDefaultSave').disabled = !preferred;
+  $('#aiDefaultFilter').value = state.aiFilters.default;
+  applyModelFilter('default');
+  updateExpandAll('default');
   renderFullCatalog();
   renderAiSettings();
 }
 
 function renderFullCatalog(){
   const providers = state.info.ai?.allProviders || [];
-  $('#aiCatalogModels').innerHTML = providers.length ? providers.map((provider, index) => accordion(provider, `
+  reconcileExpanded('catalog', providers, [providers[0]?.id].filter(Boolean));
+  $('#aiCatalogModels').innerHTML = providers.length ? providers.map(provider => accordion(provider, `
+    <div class="provider-actions"><button class="btn provider-select-all" type="button" data-provider-select-all="${esc(provider.id)}"></button></div>
     <div class="catalog-models">${provider.models.map(model => {
       const draft = state.aiDraft.get(modelKey(provider.id, model.id)) || model;
-      return `<div class="catalog-model-row">
+      return `<div class="catalog-model-row" data-model-search="${esc(modelSearchText(provider, model))}">
         <label class="catalog-visible"><input type="checkbox" data-curation-visible data-provider="${esc(provider.id)}" value="${esc(model.id)}"${draft.visible ? ' checked' : ''}> <span><b>${esc(model.label)}</b><small>${esc(provider.label)}${model.group ? ` · ${esc(model.group)}` : ''}</small></span></label>
         <label class="catalog-category"><span class="sr-only">Categoría de ${esc(model.label)}</span><select data-curation-category data-provider="${esc(provider.id)}" data-model="${esc(model.id)}">${Object.entries(AI_CATEGORY_LABELS).map(([value, label]) => `<option value="${value}"${draft.category === value ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
       </div>`;
     }).join('')}</div>
+    <p class="model-empty filter-empty" data-filter-empty aria-live="polite" hidden>No hay modelos que coincidan con el filtro en este proveedor.</p>
     ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
-  `, 'catalog-provider', index === 0)).join('') : '<p class="model-empty">No se descubrieron modelos. Actualiza el catálogo o revisa la configuración de proveedores.</p>';
+  `, 'catalog-provider', state.aiExpanded.catalog.has(provider.id))).join('') : '<p class="model-empty">No se descubrieron modelos. Actualiza el catálogo o revisa la configuración de proveedores.</p>';
   $('#aiCatalogSave').disabled = !providers.length;
+  $('#aiCatalogFilter').value = state.aiFilters.catalog;
+  applyModelFilter('catalog');
+  for (const provider of providers) updateProviderSelectionButton(provider.id);
+  updateExpandAll('catalog');
 }
 
 function providerSettings(providerId){
@@ -221,6 +286,32 @@ $('#aiCatalogForm').addEventListener('change', e => {
   if (!draft) return;
   if (visible) draft.visible = visible.checked;
   if (category) draft.category = category.value;
+  if (visible) updateProviderSelectionButton(provider);
+  $('#aiCatalogHint').textContent = 'Hay cambios sin guardar. La vista principal se actualizará al guardar.';
+});
+
+function updateProviderSelectionButton(providerId){
+  const provider = (state.info.ai?.allProviders || []).find(item => item.id === providerId);
+  const button = [...document.querySelectorAll('[data-provider-select-all]')].find(item => item.dataset.providerSelectAll === providerId);
+  if (!provider || !button) return;
+  const allVisible = provider.models.length > 0 && provider.models.every(model => state.aiDraft.get(modelKey(providerId, model.id))?.visible);
+  button.textContent = allVisible ? 'Desmarcar todos' : 'Marcar todos';
+  button.setAttribute('aria-label', `${allVisible ? 'Desmarcar' : 'Marcar'} todos los modelos de ${provider.label}`);
+  button.setAttribute('aria-pressed', String(allVisible));
+  button.disabled = !provider.models.length;
+}
+
+$('#aiCatalogForm').addEventListener('click', e => {
+  const button = e.target.closest('[data-provider-select-all]');
+  if (!button) return;
+  const provider = (state.info.ai?.allProviders || []).find(item => item.id === button.dataset.providerSelectAll);
+  if (!provider) return;
+  const mark = !provider.models.every(model => state.aiDraft.get(modelKey(provider.id, model.id))?.visible);
+  for (const model of provider.models) state.aiDraft.get(modelKey(provider.id, model.id)).visible = mark;
+  for (const input of $('#aiCatalogModels').querySelectorAll('[data-curation-visible]')) {
+    if (input.dataset.provider === provider.id) input.checked = mark;
+  }
+  updateProviderSelectionButton(provider.id);
   $('#aiCatalogHint').textContent = 'Hay cambios sin guardar. La vista principal se actualizará al guardar.';
 });
 
@@ -241,7 +332,17 @@ document.querySelector('#admin-pane-ai').addEventListener('click', e => {
   const content = document.getElementById(button.getAttribute('aria-controls'));
   content.hidden = !content.hidden;
   button.setAttribute('aria-expanded', String(!content.hidden));
+  const section = button.closest('#aiDefaultPanel') ? 'default' : 'catalog';
+  const provider = button.closest('.provider-card').dataset.provider;
+  if (content.hidden) state.aiExpanded[section].delete(provider);
+  else state.aiExpanded[section].add(provider);
+  updateExpandAll(section);
 });
+
+$('#aiDefaultFilter').addEventListener('input', () => applyModelFilter('default'));
+$('#aiCatalogFilter').addEventListener('input', () => applyModelFilter('catalog'));
+$('#aiDefaultExpandAll').addEventListener('click', () => toggleAllAccordions('default'));
+$('#aiCatalogExpandAll').addEventListener('click', () => toggleAllAccordions('catalog'));
 
 function renderAiSettings(){
   const input = $('#opencodeSessionLimit');
