@@ -74,8 +74,8 @@ secretos van en `.env`, que Git ignora.
 | `host` / `port` | `0.0.0.0` / `3000` | Dónde escucha el servidor. |
 | `ai.provider` | `opencode-go` | `opencode-go`, `gemini`, `openai`, `anthropic`, `azure`, `ollama` o `custom`. |
 | `ai.model` | según proveedor | Modelo de fallback y predeterminado inicial. |
-| `ai.providers` | `{}` | Opciones por proveedor y configuración explícita de Azure, custom u Ollama. |
-| `ai.baseUrl` | según proveedor | Obligatorio para `azure` y `custom`. |
+| `ai.providers` | `{}` | Opciones por proveedor y configuración explícita de custom u Ollama. |
+| `ai.baseUrl` | según proveedor | Obligatorio para `custom`. |
 | `ai.promptFile` | `prompts/vocab-entry.prompt.md` | Prompt de sistema. |
 | `ai.timeoutMs` | `90000` | Tiempo máximo de espera de la IA. |
 | `ai.catalogTtlMs` / `ai.catalogTimeoutMs` | `300000` / `10000` | Vigencia de la caché y timeout de descubrimiento. |
@@ -83,7 +83,8 @@ secretos van en `.env`, que Git ignora.
 
 Variables de entorno (`.env`):
 - **Administración:** `ADMIN_TOKEN`.
-- **Claves de IA:** `OPENCODE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` y `AZURE_OPENAI_API_KEY`. Tras agregar o quitar una clave, reinicia el servidor.
+- **Claves de IA:** `OPENCODE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` y `AZURE_OPENAI_API_KEY`.
+- **Azure OpenAI:** `AZURE_OPENAI_ENDPOINT`, junto con `AZURE_OPENAI_API_KEY`. Tras cambiar una clave o endpoint, reinicia el servidor.
 - **Compatibilidad:** `AI_API_KEY` solo autentica un proveedor que esté configurado explícitamente y sea el único sin clave específica; nunca habilita varios proveedores a la vez.
 - **Opcionales:** `PORT`, `HOST`, `VOCAB_DB`, `VOCAB_DATA_FOLDER`, `VOCAB_PAGE_SIZE` y `VOCAB_CONFIG`.
 
@@ -103,31 +104,36 @@ catálogo oficial de cada proveedor.
   "ai": {
     "providers": {
       "ollama": {},
-      "custom": { "baseUrl": "https://proveedor.example/v1", "auth": "none" },
-      "azure": { "baseUrl": "https://recurso.openai.azure.com/openai/v1" }
+      "custom": { "baseUrl": "https://proveedor.example/v1", "auth": "none" }
     }
   }
 }
 ```
 
-Azure requiere `AZURE_OPENAI_API_KEY` además de su `baseUrl`; custom requiere
-`baseUrl` y usa `AI_API_KEY`, salvo que se configure deliberadamente con
+Azure se habilita automáticamente solo cuando `AZURE_OPENAI_API_KEY` y
+`AZURE_OPENAI_ENDPOINT` tienen valor; no requiere una entrada en `config.json`.
+El endpoint puede ser la raíz copiada del portal, por ejemplo
+`https://recurso.openai.azure.com` o `https://recurso.services.ai.azure.com`, o
+la URL completa terminada en `/openai/v1`. El servidor quita barras finales y
+agrega `/openai/v1` únicamente cuando falta. Custom requiere `baseUrl` y usa
+`AI_API_KEY`, salvo que se configure deliberadamente con
 `"auth": "none"`. Ollama no usa clave, pero requiere su entrada explícita y no
 se sondea localhost automáticamente.
 
 OpenCode Go usa `https://opencode.ai/zen/go/v1/models`; no se mezcla con el
 producto OpenCode Zen. OpenAI usa `/v1/models`, Anthropic pagina `/v1/models`,
-Gemini usa su listado nativo y Ollama usa `/api/tags`. `custom` y `azure`
-consultan `{baseUrl}/models`; si el servicio no ofrece discovery, el proveedor
-publica un error en vez de inventar modelos. Cada proveedor admite `baseUrl`,
-`catalogUrl`, `auth`, `jsonMode`, `temperature`, `timeoutMs` y `maxTerms`. Usa
+Gemini usa su listado nativo y Ollama usa `/api/tags`. `custom` consulta
+`{baseUrl}/models` y Azure consulta `{AZURE_OPENAI_ENDPOINT}/openai/v1/models`;
+si el servicio no ofrece discovery, el proveedor publica un error en vez de
+inventar modelos. Las opciones de transporte en `ai.providers` se aplican a los
+proveedores configurables, no reemplazan la clave ni el endpoint de Azure. Usa
 `"auth": "none"` solo para un servicio compatible que realmente no requiera clave.
 
 El catálogo se guarda cinco minutos en memoria y deduplica actualizaciones
 concurrentes. Si una actualización falla después de un éxito, se conserva el
 último snapshot marcado como desactualizado; sin un snapshot previo se omite
 solo ese proveedor. Las rutas públicas exponen IDs, etiquetas, frescura y
-errores sanitizados, nunca claves ni URLs internas. **Actualizar modelos** en
+errores sanitizados, nunca claves, endpoints ni URLs internas. **Actualizar modelos** en
 Administración fuerza una consulta nueva con la autenticación administrativa.
 
 En **Agregar tarjetas → Modelo predeterminado**, Administración permite elegir

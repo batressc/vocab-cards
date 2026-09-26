@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createAiModelCatalog } from '../ai-models.js';
 import { resolveAi, publicAiInfo, generateEntries, createOpenCodeSessionAllocator, OPENCODE_USER_AGENT } from '../ai.js';
 
-const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'OPENCODE_API_KEY'];
+const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'OPENCODE_API_KEY'];
 
 function isolateKeyEnv(t, values = {}) {
   const saved = new Map(KEY_ENV.map(key => [key, process.env[key]]));
@@ -151,24 +151,69 @@ test('AI_API_KEY solo activa una configuración explícita no ambigua', async t 
   assert.deepEqual(ambiguous.providers, []);
 });
 
-test('Ollama, custom y Azure requieren su configuración explícita', async t => {
-  isolateKeyEnv(t, { AI_API_KEY: 'custom-key', AZURE_OPENAI_API_KEY: 'azure-key' });
+test('Azure se activa con clave y endpoint raíz, y normaliza su base v1', async t => {
+  isolateKeyEnv(t, {
+    AZURE_OPENAI_API_KEY: 'azure-key',
+    AZURE_OPENAI_ENDPOINT: ' https://resource.openai.azure.com/// '
+  });
+  let request;
+  const snapshot = await createAiModelCatalog({ fetchImpl: async (url, options) => {
+    request = { url: String(url), options };
+    return jsonResponse({ data: [{ id: 'azure-model' }] });
+  } }).get({ ai: {} });
+
+  assert.deepEqual(snapshot.providers.map(provider => provider.id), ['azure']);
+  assert.equal(request.url, 'https://resource.openai.azure.com/openai/v1/models');
+  assert.equal(request.options.headers['api-key'], 'azure-key');
+  assert.equal(request.options.headers.authorization, undefined);
+});
+
+test('Azure conserva un endpoint v1 completo sin duplicar la ruta', async t => {
+  isolateKeyEnv(t, {
+    AZURE_OPENAI_API_KEY: 'azure-key',
+    AZURE_OPENAI_ENDPOINT: 'https://resource.services.ai.azure.com/openai/v1/'
+  });
+  let url;
+  await createAiModelCatalog({ fetchImpl: async value => {
+    url = String(value);
+    return jsonResponse({ data: [{ id: 'azure-model' }] });
+  } }).get({ ai: {} });
+
+  assert.equal(url, 'https://resource.services.ai.azure.com/openai/v1/models');
+});
+
+test('Azure permanece oculto si falta la clave o el endpoint', async t => {
+  let calls = 0;
+  const fetchImpl = async () => { calls++; return jsonResponse({ data: [{ id: 'unexpected' }] }); };
+
+  isolateKeyEnv(t, { AZURE_OPENAI_ENDPOINT: 'https://resource.openai.azure.com' });
+  const missingKey = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
+  delete process.env.AZURE_OPENAI_ENDPOINT;
+  process.env.AZURE_OPENAI_API_KEY = 'azure-key';
+  const missingEndpoint = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { azure: { baseUrl: 'https://legacy.example/v1' } } } });
+
+  assert.deepEqual(missingKey.providers, []);
+  assert.deepEqual(missingEndpoint.providers, []);
+  assert.equal(calls, 0);
+});
+
+test('Ollama y custom requieren su configuración explícita', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'custom-key' });
   const urls = [];
   const fetchImpl = async url => {
     const value = String(url);
     urls.push(value);
     if (value.includes('/api/tags')) return jsonResponse({ models: [{ name: 'llama-local' }] });
-    return jsonResponse({ data: [{ id: value.includes('azure') ? 'azure-model' : 'custom-model' }] });
+    return jsonResponse({ data: [{ id: 'custom-model' }] });
   };
   const absent = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
   const explicit = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: {
-    azure: { baseUrl: 'https://azure.example/v1' },
     custom: { baseUrl: 'https://custom.example/v1' },
     ollama: {}
   } } });
 
   assert.deepEqual(absent.providers, []);
-  assert.deepEqual(explicit.providers.map(provider => provider.id), ['azure', 'ollama', 'custom']);
+  assert.deepEqual(explicit.providers.map(provider => provider.id), ['ollama', 'custom']);
   assert.ok(urls.some(url => url.includes('11434/api/tags')));
 });
 
@@ -204,18 +249,53 @@ test('cachea por TTL, deduplica refresh concurrente y conserva stale-if-error', 
 });
 
 test('sin snapshot exitoso omite solo el proveedor fallido y publica error sanitizado', async t => {
-  isolateKeyEnv(t, { AZURE_OPENAI_API_KEY: 'azure-key' });
+  isolateKeyEnv(t, { AZURE_OPENAI_API_KEY: 'azure-key', AZURE_OPENAI_ENDPOINT: 'https://good.example' });
   const snapshot = await createAiModelCatalog({ fetchImpl: async url => {
     if (String(url).includes('bad')) throw new Error('ECONNREFUSED https://bad.internal');
     return jsonResponse({ data: [{ id: 'ok' }] });
   } }).get({ ai: { providers: {
     custom: { baseUrl: 'https://bad.internal', auth: 'none' },
-    azure: { baseUrl: 'https://good.example/v1' }
+    azure: {}
   } } });
 
   assert.deepEqual(snapshot.providers.map(provider => provider.id), ['azure']);
   assert.deepEqual(snapshot.errors.map(error => error.provider), ['custom']);
   assert.doesNotMatch(JSON.stringify(snapshot.errors), /bad\.internal|ECONNREFUSED/);
+});
+
+test('Azure no expone su clave ni endpoint en respuestas públicas o logs', async t => {
+  const apiKey = 'azure-secret-key';
+  const endpoint = 'https://private-resource.openai.azure.com';
+  isolateKeyEnv(t, { AZURE_OPENAI_API_KEY: apiKey, AZURE_OPENAI_ENDPOINT: endpoint });
+
+  const info = await publicAiInfo({ ai: {} }, {
+    catalog: createAiModelCatalog({ fetchImpl: async () => jsonResponse({ error: { message: `${endpoint} ${apiKey}` } }, 400) })
+  });
+  assert.doesNotMatch(JSON.stringify(info), /azure-secret-key|private-resource/);
+
+  const warnings = [];
+  let generationRequest;
+  const savedWarn = console.warn;
+  console.warn = message => warnings.push(message);
+  t.after(() => { console.warn = savedWarn; });
+  const snapshot = modelSnapshot('azure', [{ id: 'deployment', label: 'Deployment', protocol: 'chat', supportsTemperature: true }]);
+  await assert.rejects(
+    generateEntries({ ai: {} }, [{ term: 'word' }], {
+      provider: 'azure', model: 'deployment', catalog: { get: async () => snapshot },
+      fetchImpl: async (url, options) => {
+        generationRequest = { url: String(url), options };
+        return jsonResponse({ error: { message: `${endpoint} ${apiKey}` } }, 400);
+      }
+    }),
+    error => {
+      assert.doesNotMatch(error.message, /azure-secret-key|private-resource/);
+      return true;
+    }
+  );
+  assert.equal(generationRequest.url, `${endpoint}/openai/v1/chat/completions`);
+  assert.equal(generationRequest.options.headers['api-key'], apiKey);
+  assert.equal(generationRequest.options.headers.authorization, undefined);
+  assert.doesNotMatch(warnings.join('\n'), /azure-secret-key|private-resource/);
 });
 
 test('publicAiInfo es async y resolveAi valida contra el snapshot descubierto', async t => {

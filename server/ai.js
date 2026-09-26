@@ -68,12 +68,12 @@ export function createOpenCodeSessionAllocator(createId = randomUUID) {
 
 const allocateOpenCodeSession = createOpenCodeSessionAllocator();
 
-function explain(status, detail, provider) {
+function explain(status, provider) {
   if (status === 401 || status === 403) return `${provider.label} rechazó la clave de API. Revísala en la configuración.`;
   if (status === 404) return `${provider.label} no encontró el modelo "${provider.model}" o la dirección configurada.`;
   if (status === 429) return `${provider.label} indica que se alcanzó el límite de uso o la cuota. Espera un momento o revisa tu plan.`;
   if (status >= 500) return `${provider.label} tuvo un error temporal (${status}). Inténtalo de nuevo.`;
-  return `${provider.label} respondió ${status}${detail ? `: ${detail}` : '.'}`;
+  return `${provider.label} respondió ${status}.`;
 }
 
 function generationHeaders(provider) {
@@ -148,9 +148,8 @@ export async function generateEntries(cfg, terms, options = {}) {
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = data?.error?.message || data?.message || '';
-    console.warn(`IA ${provider.provider} ${response.status}: ${String(detail).slice(0, 200)}`);
-    throw new AiError(explain(response.status, String(detail).slice(0, 200), provider), response.status === 429 ? 429 : 502);
+    console.warn(`IA ${provider.provider} ${response.status}`);
+    throw new AiError(explain(response.status, provider), response.status === 429 ? 429 : 502);
   }
 
   const text = String(responseText(provider.protocol, data)).replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').trim();

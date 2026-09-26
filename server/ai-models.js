@@ -15,6 +15,10 @@ export const AI_PROVIDERS = Object.freeze({
 
 const clean = value => String(value ?? '').trim();
 const trimUrl = value => clean(value).replace(/\/+$/, '');
+const azureBaseUrl = () => {
+  const endpoint = trimUrl(process.env.AZURE_OPENAI_ENDPOINT);
+  return endpoint && !/\/openai\/v1$/i.test(endpoint) ? `${endpoint}/openai/v1` : endpoint;
+};
 
 function providerEntries(cfg) {
   const providers = cfg.ai?.providers;
@@ -37,7 +41,7 @@ function genericKeyProvider(cfg) {
   const candidates = providerEntries(cfg).filter(({ id, options }) => {
     const preset = AI_PROVIDERS[id];
     const auth = options.auth || preset?.auth || 'bearer';
-    return preset && !preset.noKey && auth !== 'none' && !specificApiKey(preset);
+    return id !== 'azure' && preset && !preset.noKey && auth !== 'none' && !specificApiKey(preset);
   });
   return candidates.length === 1 ? candidates[0].id : '';
 }
@@ -50,7 +54,7 @@ function activeProviderIds(cfg) {
     const explicit = options !== undefined;
     const hasCredential = Boolean(specificApiKey(preset)) || genericProvider === id;
     if (AUTO_KEYED_PROVIDERS.has(id)) return hasCredential ? [id] : [];
-    if (id === 'azure') return explicit && hasCredential ? [id] : [];
+    if (id === 'azure') return specificApiKey(preset) && azureBaseUrl() ? [id] : [];
     if (id === 'custom') return explicit && ((options.auth || preset.auth || 'bearer') === 'none' || hasCredential) ? [id] : [];
     return id === 'ollama' && explicit ? [id] : [];
   });
@@ -64,8 +68,10 @@ export function resolveProvider(cfg, id) {
   const ai = cfg.ai || {};
   const options = entry?.options || {};
   const apiKey = specificApiKey(preset) || (genericKeyProvider(cfg) === id ? clean(process.env.AI_API_KEY) : '');
-  const auth = options.auth || preset.auth || 'bearer';
-  const baseUrl = trimUrl(options.baseUrl ?? (clean(ai.provider).toLowerCase() === id ? ai.baseUrl : '') ?? preset.baseUrl) || trimUrl(preset.baseUrl);
+  const auth = id === 'azure' ? preset.auth : options.auth || preset.auth || 'bearer';
+  const baseUrl = id === 'azure'
+    ? azureBaseUrl()
+    : trimUrl(options.baseUrl ?? (clean(ai.provider).toLowerCase() === id ? ai.baseUrl : '') ?? preset.baseUrl) || trimUrl(preset.baseUrl);
   if (!baseUrl) return { enabled: false, provider: id, label: preset.label, reason: `Falta "baseUrl" para ${preset.label}.` };
   if (!apiKey && !preset.noKey && auth !== 'none') return { enabled: false, provider: id, label: preset.label, reason: `Falta la clave de API para ${preset.label}.` };
   return {
@@ -75,12 +81,12 @@ export function resolveProvider(cfg, id) {
     baseUrl,
     apiKey,
     auth,
-    protocol: options.protocol || preset.protocol,
+    protocol: id === 'azure' ? preset.protocol : options.protocol || preset.protocol,
     jsonMode: options.jsonMode ?? preset.jsonMode ?? true,
     temperature: typeof options.temperature === 'number' ? options.temperature : typeof ai.temperature === 'number' ? ai.temperature : null,
     timeoutMs: positive(options.timeoutMs ?? ai.timeoutMs, 90_000),
     maxTerms: positive(options.maxTerms ?? ai.maxTerms, 10),
-    catalogUrl: trimUrl(options.catalogUrl),
+    catalogUrl: id === 'azure' ? '' : trimUrl(options.catalogUrl),
     options
   };
 }
