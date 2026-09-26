@@ -4,9 +4,9 @@ const digest = s => createHash('sha256').update(String(s)).digest();
 
 /**
  * Protege las rutas de escritura con una clave (cabecera Authorization: Bearer <clave>).
- * Si adminToken está vacío, se genera una clave temporal al arrancar y se muestra
- * en la consola; cambia en cada reinicio, así que conviene fijarla en config.json
- * o en la variable ADMIN_TOKEN.
+ * Si ADMIN_TOKEN no está definido, se genera una clave temporal al arrancar y
+ * se muestra en la consola; cambia en cada reinicio, así que conviene fijarla
+ * en .env.
  */
 export function createAuth(getConfig) {
   let temporary = null;
@@ -22,9 +22,9 @@ export function createAuth(getConfig) {
     async announce() {
       const configured = (await getConfig()).adminToken;
       if (!configured) {
-        console.warn(`\n  No hay adminToken configurado. Clave temporal de administración:\n\n      ${await currentToken()}\n\n  Cambia en cada reinicio. Fíjala con "adminToken" en config.json o con ADMIN_TOKEN.\n`);
+        console.warn(`\n  No hay ADMIN_TOKEN configurado. Clave temporal de administración:\n\n      ${await currentToken()}\n\n  Cambia en cada reinicio. Define ADMIN_TOKEN en .env.\n`);
       } else if (configured.length < 12) {
-        console.warn('  Aviso: adminToken tiene menos de 12 caracteres; usa una clave más larga.');
+        console.warn('  Aviso: ADMIN_TOKEN tiene menos de 12 caracteres; usa una clave más larga.');
       }
     },
     require: async (req, res, next) => {

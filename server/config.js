@@ -9,7 +9,6 @@ const DEFAULTS = {
   dataFolder: 'data/seed',
   includeSubfolders: false,
   seedFromFolderWhenEmpty: true,
-  adminToken: '',
   pageSize: 12,
   maxPageSize: 100,
   maxImportBytes: 5 * 1024 * 1024,
@@ -26,9 +25,9 @@ const bool = (v, def) => v === undefined || v === '' ? def : v === true || v ===
 const path = p => isAbsolute(p) ? p : resolve(ROOT, p);
 
 /**
- * Lee config.json. Se vuelve a leer en cada petición de administración, así
- * cambiar el tamaño de página o la clave no requiere reiniciar (salvo host,
- * port, dbPath y trustProxy). Las variables de entorno tienen prioridad:
+ * Lee la configuración no secreta de config.json. Se vuelve a leer en cada
+ * petición de administración; los secretos proceden únicamente del entorno.
+ * Las variables de entorno tienen prioridad:
  *   VOCAB_DB, VOCAB_DATA_FOLDER, VOCAB_PAGE_SIZE, ADMIN_TOKEN, HOST, PORT, VOCAB_CONFIG
  */
 export async function loadConfig() {
@@ -37,6 +36,9 @@ export async function loadConfig() {
     file = JSON.parse(await readFile(CONFIG_PATH, 'utf8'));
   } catch (err) {
     if (err.code !== 'ENOENT') console.warn(`No se pudo leer ${CONFIG_PATH}: ${err.message}. Se usan valores por defecto.`);
+  }
+  if (Object.hasOwn(file, 'adminToken')) {
+    throw new Error('config.json contiene adminToken heredado. Muévelo a .env como ADMIN_TOKEN y elimina adminToken de config.json.');
   }
   const env = process.env;
   const c = { ...DEFAULTS, ...file };
@@ -48,7 +50,7 @@ export async function loadConfig() {
     dataFolder: path(dataFolder),
     includeSubfolders: bool(c.includeSubfolders, false),
     seedFromFolderWhenEmpty: bool(c.seedFromFolderWhenEmpty, true),
-    adminToken: String(env.ADMIN_TOKEN ?? c.adminToken ?? ''),
+    adminToken: String(env.ADMIN_TOKEN ?? ''),
     pageSize: int(env.VOCAB_PAGE_SIZE ?? c.pageSize, 12, 1, 200),
     maxPageSize: int(c.maxPageSize, 100, 1, 1000),
     maxImportBytes: int(c.maxImportBytes, DEFAULTS.maxImportBytes, 1024, 50 * 1024 * 1024),

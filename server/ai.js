@@ -15,7 +15,7 @@ export const PRESETS = {
   custom:    { label: 'Compatible con OpenAI', style: 'openai', baseUrl: '',                                                   keyEnv: 'AI_API_KEY' }
 };
 
-/** Resuelve la configuración efectiva. La clave se toma, en orden, de AI_API_KEY, de la variable del proveedor o de config.json. */
+/** Resuelve la configuración efectiva. La clave viene de AI_API_KEY o de la variable específica del proveedor. */
 export function resolveAi(cfg) {
   const ai = cfg.ai || {};
   const name = String(ai.provider || '').toLowerCase();
@@ -23,7 +23,7 @@ export function resolveAi(cfg) {
   if (!preset) return { enabled: false, reason: name ? `Proveedor "${name}" desconocido.` : 'No hay proveedor de IA configurado.' };
 
   const env = process.env;
-  const apiKey = env.AI_API_KEY || (preset.keyEnv && env[preset.keyEnv]) || ai.apiKey || '';
+  const apiKey = env.AI_API_KEY || (preset.keyEnv && env[preset.keyEnv]) || '';
   const baseUrl = String(ai.baseUrl || preset.baseUrl || '').replace(/\/+$/, '');
   const model = String(ai.model || preset.model || '');
   const r = {
@@ -36,7 +36,7 @@ export function resolveAi(cfg) {
   };
   if (!baseUrl) return { enabled: false, reason: `Falta "ai.baseUrl" para ${preset.label}.` };
   if (!model) return { enabled: false, reason: 'Falta "ai.model".' };
-  if (!apiKey && !preset.noKey) return { enabled: false, reason: `Falta la clave de API (${preset.keyEnv || 'AI_API_KEY'}).` };
+  if (!apiKey && !preset.noKey) return { enabled: false, reason: `Falta la clave de API (${preset.keyEnv || 'AI_API_KEY'} o AI_API_KEY).` };
   return r;
 }
 

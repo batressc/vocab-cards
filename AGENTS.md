@@ -19,11 +19,30 @@ npm install        # dependencias
 npm run dev        # servidor + Vite con recarga en caliente → http://localhost:3000
 npm test           # pruebas del backend (node:test)
 npm run build      # compila el frontend en dist/
+npm run preview    # build + servidor de producción
 npm start          # producción: sirve dist/ (requiere build)
 ```
 
 Requisito: Node.js 22.13 o superior (se usa `node:sqlite`); `.nvmrc` indica 24.
 Los secretos van en `.env` (plantilla: `.env.example`); nunca en `config.json`.
+
+## Qué leer según el cambio
+
+Empieza aquí y amplía el contexto solo cuando el cambio lo requiera:
+
+| Cambio | Lee |
+|---|---|
+| Cualquier cambio | `AGENTS.md` |
+| Configuración o despliegue | `README.md` |
+| Datos o API | `docs/data-model.md` |
+| IA o prompt | `prompts/README.md` |
+| Forma de una tarjeta | `server/entry.js`, `schema/vocab-entries.schema.json`, `prompts/vocab-entry.prompt.md` y `docs/data-model.md` |
+
+## Flujo de la aplicación
+
+El navegador llama a las rutas de Express; las rutas consultan o modifican
+`VocabStore`, que mantiene una copia en memoria y persiste las escrituras mediante
+transacciones SQLite.
 
 ## Estructura
 
@@ -78,7 +97,9 @@ tarjeta; no la cambies sin una migración de ids.
 
 1. Ejecuta `npm test`: debe pasar completo. Agrega pruebas en `server/test/` para la lógica nueva del backend.
 2. Ejecuta `npm run build`: debe compilar sin errores.
-3. Si tocaste el frontend, pruébalo con `npm run dev` en el navegador. Revisa la página de tarjetas y la de agregar, en tema claro y oscuro y en ancho de móvil.
+3. Si tocaste `web/`, la validación visual es obligatoria: usa `npm run dev` y revisa las páginas de tarjetas y de agregar, en tema claro, oscuro y ancho de móvil.
+
+No hay lint, formatter, typecheck ni pruebas automatizadas del frontend.
 
 ## Qué no hacer
 
