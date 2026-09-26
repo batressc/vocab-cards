@@ -1,6 +1,7 @@
 const DEFAULT_TTL_MS = 5 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MODELS_DEV_URL = 'https://models.dev/api.json';
+const AUTO_KEYED_PROVIDERS = new Set(['opencode-go', 'openai', 'anthropic', 'gemini']);
 
 export const AI_PROVIDERS = Object.freeze({
   'opencode-go': { label: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', keyEnv: 'OPENCODE_API_KEY', protocol: 'chat', jsonMode: false },
@@ -26,14 +27,43 @@ function providerEntries(cfg) {
   });
 }
 
+function specificApiKey(preset) {
+  return preset.keyEnv && preset.keyEnv !== 'AI_API_KEY' ? clean(process.env[preset.keyEnv]) : '';
+}
+
+// La clave genérica solo es segura si identifica un único proveedor explícito.
+function genericKeyProvider(cfg) {
+  if (!clean(process.env.AI_API_KEY)) return '';
+  const candidates = providerEntries(cfg).filter(({ id, options }) => {
+    const preset = AI_PROVIDERS[id];
+    const auth = options.auth || preset?.auth || 'bearer';
+    return preset && !preset.noKey && auth !== 'none' && !specificApiKey(preset);
+  });
+  return candidates.length === 1 ? candidates[0].id : '';
+}
+
+function activeProviderIds(cfg) {
+  const entries = new Map(providerEntries(cfg).map(entry => [entry.id, entry.options]));
+  const genericProvider = genericKeyProvider(cfg);
+  return Object.entries(AI_PROVIDERS).flatMap(([id, preset]) => {
+    const options = entries.get(id);
+    const explicit = options !== undefined;
+    const hasCredential = Boolean(specificApiKey(preset)) || genericProvider === id;
+    if (AUTO_KEYED_PROVIDERS.has(id)) return hasCredential ? [id] : [];
+    if (id === 'azure') return explicit && hasCredential ? [id] : [];
+    if (id === 'custom') return explicit && ((options.auth || preset.auth || 'bearer') === 'none' || hasCredential) ? [id] : [];
+    return id === 'ollama' && explicit ? [id] : [];
+  });
+}
+
 export function resolveProvider(cfg, id) {
   id = clean(id).toLowerCase();
   const preset = AI_PROVIDERS[id];
   const entry = providerEntries(cfg).find(item => item.id === id);
-  if (!preset || !entry) return { enabled: false, provider: id, label: preset?.label || id || 'Proveedor desconocido', reason: `El proveedor "${id || 'desconocido'}" no está configurado.` };
+  if (!preset || !activeProviderIds(cfg).includes(id)) return { enabled: false, provider: id, label: preset?.label || id || 'Proveedor desconocido', reason: `El proveedor "${id || 'desconocido'}" no está disponible.` };
   const ai = cfg.ai || {};
-  const options = entry.options;
-  const apiKey = process.env.AI_API_KEY || (preset.keyEnv && process.env[preset.keyEnv]) || '';
+  const options = entry?.options || {};
+  const apiKey = specificApiKey(preset) || (genericKeyProvider(cfg) === id ? clean(process.env.AI_API_KEY) : '');
   const auth = options.auth || preset.auth || 'bearer';
   const baseUrl = trimUrl(options.baseUrl ?? (clean(ai.provider).toLowerCase() === id ? ai.baseUrl : '') ?? preset.baseUrl) || trimUrl(preset.baseUrl);
   if (!baseUrl) return { enabled: false, provider: id, label: preset.label, reason: `Falta "baseUrl" para ${preset.label}.` };
@@ -201,9 +231,9 @@ export function createAiModelCatalog({ fetchImpl = globalThis.fetch, now = Date.
   async function refresh(cfg) {
     const signature = configSignature(cfg);
     const startedAt = now();
-    const configured = providerEntries(cfg);
+    const configured = activeProviderIds(cfg);
     const timeoutMs = positive(cfg.ai?.catalogTimeoutMs, DEFAULT_TIMEOUT_MS);
-    const resolved = configured.map(({ id }) => ({ ...resolveProvider(cfg, id), timeoutMs }));
+    const resolved = configured.map(id => ({ ...resolveProvider(cfg, id), timeoutMs }));
     const metadata = await loadMetadata(fetchImpl, resolved.filter(item => item.enabled), timeoutMs);
     const previous = state?.signature === signature ? state.snapshot : null;
     const settled = await Promise.all(resolved.map(async provider => {

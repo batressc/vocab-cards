@@ -174,9 +174,12 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.
 
-Solo las claves de `ai.providers` habilitan proveedores. Los IDs proceden de la
-API oficial de cada uno; `ai.provider` + `ai.model` únicamente expresa la
-preferencia inicial y debe existir en el snapshot para aplicarse. OpenCode Go
+Las claves específicas habilitan automáticamente OpenCode Go, OpenAI, Anthropic
+y Gemini; una entrada obsoleta en `ai.providers` no los habilita sin credencial.
+Azure, custom y Ollama requieren configuración explícita no secreta. `AI_API_KEY`
+solo se aplica cuando existe un único proveedor explícito sin clave específica.
+Los IDs proceden de la API oficial de cada uno; `ai.provider` + `ai.model`
+únicamente expresa la preferencia inicial y debe existir en el snapshot para aplicarse. OpenCode Go
 usa su catálogo `/zen/go/v1/models`, separado de Zen, y models.dev solo aporta
 etiquetas, familias, protocolo y capacidades: nunca concede pertenencia. El
 servidor cachea el catálogo, deduplica refresh concurrente y aplica

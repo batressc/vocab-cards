@@ -74,7 +74,7 @@ secretos van en `.env`, que Git ignora.
 | `host` / `port` | `0.0.0.0` / `3000` | Dónde escucha el servidor. |
 | `ai.provider` | `opencode-go` | `opencode-go`, `gemini`, `openai`, `anthropic`, `azure`, `ollama` o `custom`. |
 | `ai.model` | según proveedor | Modelo de fallback y predeterminado inicial. |
-| `ai.providers` | `{"opencode-go": {}}` | Proveedores cuyos modelos se descubren desde sus APIs oficiales. |
+| `ai.providers` | `{}` | Opciones por proveedor y configuración explícita de Azure, custom u Ollama. |
 | `ai.baseUrl` | según proveedor | Obligatorio para `azure` y `custom`. |
 | `ai.promptFile` | `prompts/vocab-entry.prompt.md` | Prompt de sistema. |
 | `ai.timeoutMs` | `90000` | Tiempo máximo de espera de la IA. |
@@ -83,32 +83,37 @@ secretos van en `.env`, que Git ignora.
 
 Variables de entorno (`.env`):
 - **Administración:** `ADMIN_TOKEN`.
-- **Claves de IA:** `OPENCODE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AZURE_OPENAI_API_KEY`, y `AI_API_KEY`, que sirve para cualquier proveedor y tiene prioridad.
+- **Claves de IA:** `OPENCODE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` y `AZURE_OPENAI_API_KEY`. Tras agregar o quitar una clave, reinicia el servidor.
+- **Compatibilidad:** `AI_API_KEY` solo autentica un proveedor que esté configurado explícitamente y sea el único sin clave específica; nunca habilita varios proveedores a la vez.
 - **Opcionales:** `PORT`, `HOST`, `VOCAB_DB`, `VOCAB_DATA_FOLDER`, `VOCAB_PAGE_SIZE` y `VOCAB_CONFIG`.
 
 Las suscripciones web (ChatGPT Plus, la app de Gemini, Copilot) no incluyen
 acceso por API: se necesita una clave de API del proveedor.
 
-`ai.providers` controla qué proveedores se consultan. NO contiene listas de
-modelos: el servidor obtiene los IDs autorizados desde el catálogo oficial de
-cada proveedor. Por defecto solo se configura `opencode-go`; Ollama no se
-consulta ni aparece salvo que exista una entrada explícita. Para habilitar
-otros proveedores, agrega entradas vacías o sus opciones no secretas:
+Las claves específicas habilitan automáticamente OpenCode Go, OpenAI, Anthropic
+y Gemini: no los agregues manualmente a `ai.providers`. Si una clave no existe,
+ese proveedor no aparece aunque quede una entrada antigua en `config.json`.
+`ai.providers` NO contiene listas de modelos: sirve para sobrescribir opciones
+no secretas y para configurar explícitamente los proveedores que no pueden
+activarse solo con una clave. El servidor obtiene los IDs autorizados desde el
+catálogo oficial de cada proveedor.
 
 ```json
 {
   "ai": {
     "providers": {
-      "opencode-go": {},
-      "openai": {},
-      "anthropic": {},
-      "gemini": {},
       "ollama": {},
-      "custom": { "baseUrl": "https://proveedor.example/v1" }
+      "custom": { "baseUrl": "https://proveedor.example/v1", "auth": "none" },
+      "azure": { "baseUrl": "https://recurso.openai.azure.com/openai/v1" }
     }
   }
 }
 ```
+
+Azure requiere `AZURE_OPENAI_API_KEY` además de su `baseUrl`; custom requiere
+`baseUrl` y usa `AI_API_KEY`, salvo que se configure deliberadamente con
+`"auth": "none"`. Ollama no usa clave, pero requiere su entrada explícita y no
+se sondea localhost automáticamente.
 
 OpenCode Go usa `https://opencode.ai/zen/go/v1/models`; no se mezcla con el
 producto OpenCode Zen. OpenAI usa `/v1/models`, Anthropic pagina `/v1/models`,

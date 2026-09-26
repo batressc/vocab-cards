@@ -64,7 +64,7 @@ test('descubre todos los modelos oficiales de OpenCode Go y no consulta Zen', as
     return jsonResponse({ object: 'list', data: [{ id: 'alpha' }, { id: 'beta' }, { id: 'official-only' }] });
   };
   const catalog = createAiModelCatalog({ fetchImpl, now: () => 1_000 });
-  const snapshot = await catalog.get({ ai: { providers: { 'opencode-go': {} } } });
+  const snapshot = await catalog.get({ ai: {} });
 
   assert.deepEqual(snapshot.providers[0].models.map(model => model.id).sort(), ['alpha', 'beta', 'official-only']);
   assert.equal(snapshot.providers[0].models.find(model => model.id === 'alpha').protocol, 'messages');
@@ -82,7 +82,7 @@ test('OpenAI usa su lista oficial y excluye modelos conocidos sin salida de text
       image: { name: 'Imagen', modalities: { output: ['image'] } }
     } } })
     : jsonResponse({ data: [{ id: 'text' }, { id: 'image' }, { id: 'official-new' }] });
-  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { openai: {} } } });
+  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
 
   assert.deepEqual(snapshot.providers[0].models.map(model => model.id).sort(), ['official-new', 'text']);
   assert.equal(snapshot.providers[0].models.find(model => model.id === 'text').protocol, 'responses');
@@ -107,7 +107,7 @@ test('Anthropic pagina el catálogo y Gemini conserva solo generateContent', asy
       nextPageToken: 'next'
     });
   };
-  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { anthropic: {}, gemini: {} } } });
+  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
 
   assert.deepEqual(snapshot.providers.find(item => item.id === 'anthropic').models.map(model => model.id), ['a', 'b']);
   assert.deepEqual(snapshot.providers.find(item => item.id === 'gemini').models.map(model => model.id), ['gemini-1', 'gemini-2']);
@@ -115,23 +115,61 @@ test('Anthropic pagina el catálogo y Gemini conserva solo generateContent', asy
   assert.equal(urls.find(([url]) => url.includes('generativelanguage'))[1]['x-goog-api-key'], 'gemini-key');
 });
 
-test('Ollama se consulta solo cuando está configurado explícitamente', async t => {
-  isolateKeyEnv(t, { OPENCODE_API_KEY: 'go-key' });
+test('oculta un proveedor estándar sin clave aunque permanezca en config', async t => {
+  isolateKeyEnv(t);
+  let calls = 0;
+  const snapshot = await createAiModelCatalog({ fetchImpl: async () => { calls++; return jsonResponse({ data: [{ id: 'unexpected' }] }); } })
+    .get({ ai: { providers: { gemini: {} } } });
+
+  assert.deepEqual(snapshot.providers, []);
+  assert.deepEqual(snapshot.errors, []);
+  assert.equal(calls, 0);
+});
+
+test('incluye todos los proveedores estándar que tienen su clave específica', async t => {
+  isolateKeyEnv(t, { OPENAI_API_KEY: 'openai-key', ANTHROPIC_API_KEY: 'anthropic-key' });
+  const fetchImpl = async url => {
+    const value = String(url);
+    if (value === 'https://models.dev/api.json') return jsonResponse({});
+    if (value.includes('anthropic.com')) return jsonResponse({ data: [{ id: 'claude' }], has_more: false });
+    return jsonResponse({ data: [{ id: 'gpt' }] });
+  };
+  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
+
+  assert.deepEqual(snapshot.providers.map(provider => provider.id), ['openai', 'anthropic']);
+});
+
+test('AI_API_KEY solo activa una configuración explícita no ambigua', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'generic-key' });
+  const fetchImpl = async () => jsonResponse({ data: [{ id: 'model' }] });
+  const single = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { openai: {} } } });
+  const absent = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
+  const ambiguous = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { openai: {}, anthropic: {} } } });
+
+  assert.deepEqual(single.providers.map(provider => provider.id), ['openai']);
+  assert.deepEqual(absent.providers, []);
+  assert.deepEqual(ambiguous.providers, []);
+});
+
+test('Ollama, custom y Azure requieren su configuración explícita', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'custom-key', AZURE_OPENAI_API_KEY: 'azure-key' });
   const urls = [];
   const fetchImpl = async url => {
-    urls.push(String(url));
-    if (String(url) === 'https://models.dev/api.json') return jsonResponse({});
-    return jsonResponse({ data: [{ id: 'go-model' }] });
+    const value = String(url);
+    urls.push(value);
+    if (value.includes('/api/tags')) return jsonResponse({ models: [{ name: 'llama-local' }] });
+    return jsonResponse({ data: [{ id: value.includes('azure') ? 'azure-model' : 'custom-model' }] });
   };
-  const catalog = createAiModelCatalog({ fetchImpl });
-  await catalog.get({ ai: { providers: { 'opencode-go': {} } } });
-  assert.ok(!urls.some(url => url.includes('11434')));
+  const absent = await createAiModelCatalog({ fetchImpl }).get({ ai: {} });
+  const explicit = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: {
+    azure: { baseUrl: 'https://azure.example/v1' },
+    custom: { baseUrl: 'https://custom.example/v1' },
+    ollama: {}
+  } } });
 
-  const ollama = await createAiModelCatalog({ fetchImpl: async url => {
-    urls.push(String(url));
-    return jsonResponse({ models: [{ name: 'llama-local' }] });
-  } }).get({ ai: { providers: { ollama: {} } } });
-  assert.deepEqual(ollama.providers[0].models.map(model => model.id), ['llama-local']);
+  assert.deepEqual(absent.providers, []);
+  assert.deepEqual(explicit.providers.map(provider => provider.id), ['azure', 'ollama', 'custom']);
+  assert.ok(urls.some(url => url.includes('11434/api/tags')));
 });
 
 test('cachea por TTL, deduplica refresh concurrente y conserva stale-if-error', async t => {
@@ -166,12 +204,12 @@ test('cachea por TTL, deduplica refresh concurrente y conserva stale-if-error', 
 });
 
 test('sin snapshot exitoso omite solo el proveedor fallido y publica error sanitizado', async t => {
-  isolateKeyEnv(t, { AI_API_KEY: 'key' });
+  isolateKeyEnv(t, { AZURE_OPENAI_API_KEY: 'azure-key' });
   const snapshot = await createAiModelCatalog({ fetchImpl: async url => {
     if (String(url).includes('bad')) throw new Error('ECONNREFUSED https://bad.internal');
     return jsonResponse({ data: [{ id: 'ok' }] });
   } }).get({ ai: { providers: {
-    custom: { baseUrl: 'https://bad.internal' },
+    custom: { baseUrl: 'https://bad.internal', auth: 'none' },
     azure: { baseUrl: 'https://good.example/v1' }
   } } });
 
