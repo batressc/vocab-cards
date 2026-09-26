@@ -1,11 +1,11 @@
 /* "Crear tarjeta con IA" desde la búsqueda: barra de sugerencia, diálogo,
    generación, vista previa y guardado. */
-import { $, esc, store, toast, OPENCODE_SESSION_LIMIT_KEY } from '../../shared/utils.js';
+import { $, esc, store, toast, findAiModel, resolveAiDefaultModel, OPENCODE_SESSION_LIMIT_KEY } from '../../shared/utils.js';
 import { meta, api, authed, cardHTML, flip, speak, applyMeta, resetFeed, onFirstPage } from './app.js';
 
 const ICON_SPARK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.4 2.4M15.3 15.3l2.4 2.4M6.3 17.7l2.4-2.4M15.3 8.7l2.4-2.4"/></svg>';
 
-const ai = { term:'', result:null, busy:false };
+const ai = { term:'', result:null, busy:false, selection:null, defaultModel:null };
 
 /* ---------------- Barra bajo la búsqueda ---------------- */
 // Recibe la primera página de cada búsqueda (ver onFirstPage en app.js).
@@ -37,18 +37,24 @@ $('#q').addEventListener('input', () => { if (!$('#q').value.trim()) $('#addBar'
 const dlg = $('#aiDialog');
 
 function openAi(term){
+  const info = meta?.ai || {};
+  ai.defaultModel = resolveAiDefaultModel(info);
+  ai.selection = ai.defaultModel ? { ...ai.defaultModel } : null;
   ai.result = null;
   $('#aiTerm').value = term;
   $('#aiHint').value = '';
   $('#aiBody').innerHTML = '';
   $('#aiActions').hidden = true;
+  $('#aiModelPicker').hidden = true;
+  $('#aiModelToggle').setAttribute('aria-expanded', 'false');
+  renderModelPicker();
   dlg.showModal();
   $('#aiTerm').focus();
   $('#aiTerm').select();
 }
 
 dlg.addEventListener('click', e => {
-  if (e.target === dlg || e.target.closest('[data-close]')) { dlg.close(); return; }
+  if ((e.target === dlg || e.target.closest('[data-close]')) && !ai.busy) { dlg.close(); return; }
   // Voltear y escuchar dentro de la vista previa
   const card = e.target.closest('.ai-preview .card'); if (!card) return;
   const s = e.target.closest('[data-say]');
@@ -61,23 +67,86 @@ $('#aiForm').addEventListener('submit', e => { e.preventDefault(); generate(); }
 $('#aiRetry').addEventListener('click', generate);
 $('#aiSave').addEventListener('click', save);
 
+$('#aiModelToggle').addEventListener('click', () => {
+  const picker = $('#aiModelPicker');
+  picker.hidden = !picker.hidden;
+  $('#aiModelToggle').setAttribute('aria-expanded', String(!picker.hidden));
+  if (!picker.hidden) picker.querySelector('input:checked')?.focus();
+});
+
+$('#aiModelPicker').addEventListener('change', e => {
+  const input = e.target.closest('input[name="ai-model"]');
+  if (!input) return;
+  ai.selection = { provider: input.dataset.provider, model: input.value };
+  renderModelSummary();
+});
+
+function selectedModel(){
+  return findAiModel(meta?.ai, ai.selection);
+}
+
+function renderModelSummary(){
+  const selected = selectedModel();
+  const total = (meta?.ai?.providers || []).reduce((sum, provider) => sum + provider.models.length, 0);
+  $('#aiModelSummary').textContent = selected
+    ? `${selected.provider.label} · ${selected.model.label}${total > 1 ? ' · Cambiar' : ' · Único disponible'}`
+    : 'No hay modelos disponibles';
+  $('#aiGenerate').disabled = !selected;
+}
+
+function renderModelPicker(){
+  const star = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>';
+  const providers = meta?.ai?.providers || [];
+  const total = providers.reduce((sum, provider) => sum + provider.models.length, 0);
+  const help = !total
+    ? '<p class="ai-model-empty">No hay modelos disponibles. Revisa el catálogo desde Administración.</p>'
+    : total === 1
+      ? '<p class="ai-model-help">Solo hay un modelo utilizable. Configura otra clave o proveedor para mostrar alternativas.</p>'
+      : '<p class="ai-model-help">Elige un modelo para esta creación. La selección es temporal; cambia el predeterminado en Administración.</p>';
+  const freshness = meta?.ai?.stale ? '<p class="ai-model-warning">El catálogo está desactualizado; se muestra el último resultado disponible.</p>' : '';
+  const errors = (meta?.ai?.errors || []).map(error => `<p class="ai-model-warning">${esc(error.message)}</p>`).join('');
+  $('#aiModelPicker').innerHTML = help + freshness + errors + providers.map(provider => `
+    <fieldset class="ai-model-group">
+      <legend>${esc(provider.label)}</legend>
+      ${provider.models.map(model => {
+        const selected = provider.id === ai.selection?.provider && model.id === ai.selection?.model;
+        const preferred = provider.id === ai.defaultModel?.provider && model.id === ai.defaultModel?.model;
+        return `<div class="ai-model-option">
+          <label><input type="radio" name="ai-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${selected ? ' checked' : ''}> <span>${esc(model.label)}${model.group ? ` <small>${esc(model.group)}</small>` : ''}</span></label>
+          <span class="ai-model-default" title="${preferred ? 'Predeterminado del navegador' : 'Selección temporal'}">${preferred ? star : ''}<span class="sr-only">${preferred ? 'Predeterminado del navegador' : ''}</span></span>
+        </div>`;
+      }).join('')}
+      ${provider.stale ? '<p class="ai-model-warning">Último catálogo disponible.</p>' : ''}
+    </fieldset>`).join('');
+  renderModelSummary();
+}
+
 function setBusy(v){
   ai.busy = v;
-  for (const id of ['aiGenerate', 'aiRetry', 'aiSave', 'aiTerm', 'aiHint']) $(`#${id}`).disabled = v;
+  for (const control of dlg.querySelectorAll('button, input')) control.disabled = v;
+  if (!v) $('#aiGenerate').disabled = !selectedModel();
 }
 
 async function generate(){
   const term = $('#aiTerm').value.trim();
   if (!term || ai.busy) return;
-  const info = meta?.ai || {};
+  const selected = selectedModel();
+  if (!selected) return;
   setBusy(true);
   $('#aiActions').hidden = true;
-  $('#aiBody').innerHTML = `<p class="ai-status"><span class="spinner" aria-hidden="true"></span>Generando la tarjeta con ${esc(info.label || 'la IA')}… suele tardar entre 5 y 30 segundos.</p>`;
+  $('#aiBody').innerHTML = `<p class="ai-status"><span class="spinner" aria-hidden="true"></span>Generando la tarjeta con ${esc(selected.provider.label)}… suele tardar entre 5 y 30 segundos.</p>`;
   try {
     const opencodeSessionRequestLimit = store.get(OPENCODE_SESSION_LIMIT_KEY);
     const r = await authed('ai/generate', {
       method:'POST',
-      body: JSON.stringify({ term, hint: $('#aiHint').value.trim(), mode:'update', opencodeSessionRequestLimit })
+      body: JSON.stringify({
+        term,
+        hint: $('#aiHint').value.trim(),
+        mode:'update',
+        provider: ai.selection.provider,
+        model: ai.selection.model,
+        opencodeSessionRequestLimit
+      })
     }, 'api/admin');
     ai.result = r;
     renderPreview(r);

@@ -37,7 +37,7 @@ const vocab = express.Router();
 
 vocab.get('/meta', async (req, res) => {
   const cfg = await loadConfig();
-  res.json({ ...store.meta(cfg.pageSize), ai: publicAiInfo(cfg) });
+  res.json({ ...store.meta(cfg.pageSize), ai: await publicAiInfo(cfg) });
 });
 
 vocab.post('/query', json('64kb'), async (req, res) => res.json(store.query(req.body ?? {}, await loadConfig())));
@@ -66,7 +66,7 @@ admin.get('/check', async (req, res) => {
     total: store.size,
     dataFolder: cfg.dataFolderSetting,
     maxImportBytes: cfg.maxImportBytes,
-    ai: publicAiInfo(cfg),
+    ai: await publicAiInfo(cfg),
     opencodeSessionLimit: OPENCODE_SESSION_LIMIT
   });
 });
@@ -95,6 +95,11 @@ admin.post('/import-folder', json('4kb'), async (req, res) => {
 
 admin.get('/imports', (req, res) => res.json(store.history(15)));
 
+admin.post('/ai/models/refresh', async (req, res) => {
+  const cfg = await loadConfig();
+  res.json(await publicAiInfo(cfg, { force: true }));
+});
+
 // Genera la tarjeta de una palabra o frase con la IA configurada. No guarda nada:
 // devuelve la vista previa y el texto, que se guarda después con /import.
 const aiLimiter = rateLimit({
@@ -108,6 +113,8 @@ admin.post('/ai/generate', aiLimiter, json('8kb'), async (req, res) => {
   try {
     const cfg = await loadConfig();
     const ai = await generateEntries(cfg, [{ term, hint }], {
+      provider: req.body?.provider,
+      model: req.body?.model,
       opencodeSessionRequestLimit: req.body?.opencodeSessionRequestLimit
     });
     const source = `IA · ${ai.label}`;

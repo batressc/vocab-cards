@@ -151,7 +151,7 @@ Lectura (pública):
 
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
-| GET | `/api/vocab/meta` | `{ total, lastUpdated, pageSize, levels: {A2: n…}, kinds: {phrasal: n…}, ai: { enabled, provider, label, model } \| { enabled: false, reason } }` |
+| GET | `/api/vocab/meta` | `{ total, lastUpdated, pageSize, levels, kinds, ai: { enabled, provider?, label?, model?, default, providers: [{ id, label, stale, fetchedAt, models: [{ id, label, group?, protocol? }] }], fetchedAt, refreshedAt, expiresAt, stale, errors: [{ provider, message }] } }` |
 | POST | `/api/vocab/query` | Cuerpo: `{ skip, take, sort, dir, seed, q, levels, kinds, excludeIds }` → `{ total, skip, items: Tarjeta[], hasMore, exact: { id, head } \| null }` |
 | GET | `/api/vocab/export` | `{ $schema, exportedAt, entries: Tarjeta[] }` (descarga) |
 
@@ -165,10 +165,31 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 |---|---|---|
 | DELETE | `/api/vocab/entries/:id` | `{ ok, total }` |
 | GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, ai, opencodeSessionLimit: { default, min, max } }` |
+| POST | `/api/admin/ai/models/refresh` | Fuerza el descubrimiento y devuelve `ai` con catálogo, frescura y errores sanitizados. |
 | POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin }` → `{ items, summary, importId? }` |
 | POST | `/api/admin/import-folder` | `{ mode, dryRun }` → igual que `import` |
 | GET | `/api/admin/imports` | Últimas 15 filas de `imports` |
-| POST | `/api/admin/ai/generate` | `{ term, hint, mode, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. Para `opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50. |
+| POST | `/api/admin/ai/generate` | `{ term, hint, mode, provider?, model?, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. `provider` y `model` deben formar un par del snapshot descubierto; si se omiten se usa el predeterminado resuelto. Para `opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50. |
 
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.
+
+Solo las claves de `ai.providers` habilitan proveedores. Los IDs proceden de la
+API oficial de cada uno; `ai.provider` + `ai.model` únicamente expresa la
+preferencia inicial y debe existir en el snapshot para aplicarse. OpenCode Go
+usa su catálogo `/zen/go/v1/models`, separado de Zen, y models.dev solo aporta
+etiquetas, familias, protocolo y capacidades: nunca concede pertenencia. El
+servidor cachea el catálogo, deduplica refresh concurrente y aplica
+stale-if-error por proveedor. Nunca publica claves, `baseUrl` ni detalles de
+errores remotos. Una selección ausente devuelve `400` antes de generar.
+
+La generación desacopla credenciales y transporte: puede usar
+`/chat/completions`, Anthropic `/messages` u OpenAI `/responses`. Todo modelo de
+OpenCode Go conserva `User-Agent` y `x-opencode-session`; los parámetros que la
+metadata marca como incompatibles, como `temperature`, se omiten.
+
+Administración guarda el predeterminado del navegador en
+`vocab-ai-default-model`; no modifica `config.json` ni el fallback del servidor.
+El cuadro **Crear con IA** parte de ese valor y permite una selección temporal
+distinta para cada apertura. Los valores locales corruptos u obsoletos se
+descartan a favor de `ai.default`.

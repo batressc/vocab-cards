@@ -1,12 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import http from 'node:http';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveAi, generateEntries, createOpenCodeSessionAllocator, OPENCODE_USER_AGENT } from '../ai.js';
+import { createAiModelCatalog } from '../ai-models.js';
+import { resolveAi, publicAiInfo, generateEntries, createOpenCodeSessionAllocator, OPENCODE_USER_AGENT } from '../ai.js';
 
-const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENCODE_API_KEY'];
+const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'OPENCODE_API_KEY'];
+
+function isolateKeyEnv(t, values = {}) {
+  const saved = new Map(KEY_ENV.map(key => [key, process.env[key]]));
+  for (const key of KEY_ENV) delete process.env[key];
+  Object.assign(process.env, values);
+  t.after(() => {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+}
+
+function jsonResponse(data, status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: async () => data };
+}
+
+function modelSnapshot(provider, models) {
+  return {
+    providers: [{ id: provider, label: provider, stale: false, models }],
+    default: { provider, model: models[0].id },
+    fetchedAt: '2026-01-01T00:00:00.000Z', expiresAt: '2026-01-01T00:05:00.000Z', stale: false, errors: []
+  };
+}
 
 test('loadConfig rechaza adminToken heredado con instrucciones de migración', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'vocab-config-'));
@@ -22,146 +46,202 @@ test('loadConfig rechaza adminToken heredado con instrucciones de migración', a
   await assert.rejects(loadConfig(), /Muévelo a \.env como ADMIN_TOKEN.*elimina adminToken/);
 });
 
-function isolateKeyEnv(t, values = {}) {
-  const saved = new Map(KEY_ENV.map(key => [key, process.env[key]]));
-  for (const key of KEY_ENV) delete process.env[key];
-  Object.assign(process.env, values);
-  t.after(() => {
-    for (const [key, value] of saved) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+test('descubre todos los modelos oficiales de OpenCode Go y no consulta Zen', async t => {
+  isolateKeyEnv(t, { OPENCODE_API_KEY: 'go-key' });
+  const urls = [];
+  const fetchImpl = async url => {
+    urls.push(String(url));
+    if (String(url) === 'https://models.dev/api.json') return jsonResponse({
+      'opencode-go': {
+        npm: '@ai-sdk/openai-compatible',
+        models: {
+          alpha: { name: 'Alpha', family: 'familia-a', provider: { npm: '@ai-sdk/anthropic' } },
+          beta: { name: 'Beta', provider: { npm: '@ai-sdk/openai' }, temperature: false }
+        }
+      },
+      opencode: { models: { zen: { name: 'No autorizado' } } }
+    });
+    return jsonResponse({ object: 'list', data: [{ id: 'alpha' }, { id: 'beta' }, { id: 'official-only' }] });
+  };
+  const catalog = createAiModelCatalog({ fetchImpl, now: () => 1_000 });
+  const snapshot = await catalog.get({ ai: { providers: { 'opencode-go': {} } } });
+
+  assert.deepEqual(snapshot.providers[0].models.map(model => model.id).sort(), ['alpha', 'beta', 'official-only']);
+  assert.equal(snapshot.providers[0].models.find(model => model.id === 'alpha').protocol, 'messages');
+  assert.equal(snapshot.providers[0].models.find(model => model.id === 'beta').protocol, 'responses');
+  assert.equal(snapshot.providers[0].models.find(model => model.id === 'beta').supportsTemperature, false);
+  assert.ok(urls.includes('https://opencode.ai/zen/go/v1/models'));
+  assert.ok(!urls.includes('https://opencode.ai/zen/v1/models'));
+});
+
+test('OpenAI usa su lista oficial y excluye modelos conocidos sin salida de texto', async t => {
+  isolateKeyEnv(t, { OPENAI_API_KEY: 'openai-key' });
+  const fetchImpl = async url => String(url) === 'https://models.dev/api.json'
+    ? jsonResponse({ openai: { npm: '@ai-sdk/openai', models: {
+      text: { name: 'Texto', modalities: { output: ['text'] } },
+      image: { name: 'Imagen', modalities: { output: ['image'] } }
+    } } })
+    : jsonResponse({ data: [{ id: 'text' }, { id: 'image' }, { id: 'official-new' }] });
+  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { openai: {} } } });
+
+  assert.deepEqual(snapshot.providers[0].models.map(model => model.id).sort(), ['official-new', 'text']);
+  assert.equal(snapshot.providers[0].models.find(model => model.id === 'text').protocol, 'responses');
+});
+
+test('Anthropic pagina el catálogo y Gemini conserva solo generateContent', async t => {
+  isolateKeyEnv(t, { ANTHROPIC_API_KEY: 'anthropic-key', GEMINI_API_KEY: 'gemini-key' });
+  const urls = [];
+  const fetchImpl = async (url, options) => {
+    const value = String(url); urls.push([value, options.headers]);
+    if (value.includes('api.anthropic.com')) {
+      return value.includes('after_id=a')
+        ? jsonResponse({ data: [{ id: 'b', display_name: 'B' }], has_more: false })
+        : jsonResponse({ data: [{ id: 'a', display_name: 'A' }], has_more: true, last_id: 'a' });
     }
-  });
-}
+    if (value.includes('pageToken=next')) return jsonResponse({ models: [{ name: 'models/gemini-2', displayName: 'Gemini 2', supportedGenerationMethods: ['generateContent'] }] });
+    return jsonResponse({
+      models: [
+        { name: 'models/gemini-1', displayName: 'Gemini 1', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/embed', supportedGenerationMethods: ['embedContent'] }
+      ],
+      nextPageToken: 'next'
+    });
+  };
+  const snapshot = await createAiModelCatalog({ fetchImpl }).get({ ai: { providers: { anthropic: {}, gemini: {} } } });
 
-/** Servidor que imita una API compatible con OpenAI. */
-function mockProvider(handler) {
-  return new Promise(resolve => {
-    const server = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', c => body += c).on('end', () => handler(JSON.parse(body || '{}'), req, res));
-    }).listen(0, () => resolve({ server, url: `http://127.0.0.1:${server.address().port}/v1` }));
-  });
-}
-
-test('resolveAi informa qué falta e ignora claves de config.json', t => {
-  isolateKeyEnv(t);
-  assert.match(resolveAi({ ai: {} }).reason, /No hay proveedor/);
-  assert.match(resolveAi({ ai: { provider: 'gemini', apiKey: 'no-se-usa' } }).reason, /GEMINI_API_KEY/);
-  assert.match(resolveAi({ ai: { provider: 'azure', model: 'm' } }).reason, /baseUrl/);
-  assert.equal(resolveAi({ ai: { provider: 'ollama' } }).enabled, true);
+  assert.deepEqual(snapshot.providers.find(item => item.id === 'anthropic').models.map(model => model.id), ['a', 'b']);
+  assert.deepEqual(snapshot.providers.find(item => item.id === 'gemini').models.map(model => model.id), ['gemini-1', 'gemini-2']);
+  assert.equal(urls.find(([url]) => url.includes('api.anthropic.com'))[1]['x-api-key'], 'anthropic-key');
+  assert.equal(urls.find(([url]) => url.includes('generativelanguage'))[1]['x-goog-api-key'], 'gemini-key');
 });
 
-test('resolveAi usa variables del proveedor y da prioridad a AI_API_KEY', t => {
-  isolateKeyEnv(t, { GEMINI_API_KEY: 'proveedor' });
-  assert.equal(resolveAi({ ai: { provider: 'gemini' } }).apiKey, 'proveedor');
-  process.env.AI_API_KEY = 'general';
-  assert.equal(resolveAi({ ai: { provider: 'gemini' } }).apiKey, 'general');
-  process.env.OPENCODE_API_KEY = 'opencode';
-  const go = resolveAi({ ai: { provider: 'opencode-go' } });
-  assert.equal(go.jsonMode, false);
+test('Ollama se consulta solo cuando está configurado explícitamente', async t => {
+  isolateKeyEnv(t, { OPENCODE_API_KEY: 'go-key' });
+  const urls = [];
+  const fetchImpl = async url => {
+    urls.push(String(url));
+    if (String(url) === 'https://models.dev/api.json') return jsonResponse({});
+    return jsonResponse({ data: [{ id: 'go-model' }] });
+  };
+  const catalog = createAiModelCatalog({ fetchImpl });
+  await catalog.get({ ai: { providers: { 'opencode-go': {} } } });
+  assert.ok(!urls.some(url => url.includes('11434')));
+
+  const ollama = await createAiModelCatalog({ fetchImpl: async url => {
+    urls.push(String(url));
+    return jsonResponse({ models: [{ name: 'llama-local' }] });
+  } }).get({ ai: { providers: { ollama: {} } } });
+  assert.deepEqual(ollama.providers[0].models.map(model => model.id), ['llama-local']);
 });
 
-test('genera con el prompt del archivo y descarta el bloque de razonamiento', async t => {
-  isolateKeyEnv(t, { AI_API_KEY: 'prueba' });
-  let received;
-  const { server, url } = await mockProvider((body, req, res) => {
-    received = body;
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ choices: [{ message: { content: '<think>{"no": "esto"}</think>{"entries":[{"head":"set up"}]}' } }] }));
-  });
-  t.after(() => server.close());
+test('cachea por TTL, deduplica refresh concurrente y conserva stale-if-error', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'key' });
+  let now = 1_000;
+  let calls = 0;
+  let fail = false;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const fetchImpl = async () => {
+    calls++;
+    if (calls === 1) await gate;
+    if (fail) return jsonResponse({ error: { message: 'https://secret.example token=secret' } }, 500);
+    return jsonResponse({ data: [{ id: 'model-a' }] });
+  };
+  const cfg = { ai: { catalogTtlMs: 100, providers: { custom: { baseUrl: 'https://private.example/v1' } } } };
+  const catalog = createAiModelCatalog({ fetchImpl, now: () => now });
+  const first = catalog.get(cfg);
+  const concurrent = catalog.get(cfg);
+  release();
+  assert.strictEqual(await first, await concurrent);
+  assert.equal(calls, 1);
+  await catalog.get(cfg);
+  assert.equal(calls, 1);
 
-  const r = await generateEntries({ ai: { provider: 'custom', baseUrl: url, model: 'm' } }, [{ term: 'set up', hint: 'configurar' }]);
-  assert.equal(r.text, '{"entries":[{"head":"set up"}]}');
-  assert.match(received.messages[0].content, /profesor de inglés/, 'usa prompts/vocab-entry.prompt.md como mensaje de sistema');
-  assert.equal(received.messages[1].content, 'LISTA:\nset up (configurar)');
+  now = 1_101; fail = true;
+  const stale = await catalog.get(cfg);
+  assert.equal(stale.stale, true);
+  assert.equal(stale.providers[0].stale, true);
+  assert.deepEqual(stale.providers[0].models.map(model => model.id), ['model-a']);
+  assert.doesNotMatch(JSON.stringify(stale.errors), /secret|private\.example|token/);
 });
 
-test('OpenCode Go envía User-Agent y una sesión opaca estable dentro del límite', async t => {
-  isolateKeyEnv(t, { OPENCODE_API_KEY: 'prueba' });
-  const headers = [];
-  const { server, url } = await mockProvider((body, req, res) => {
-    headers.push(req.headers);
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"choices":[{"message":{"content":"{\\"entries\\":[]}"}}]}');
-  });
-  t.after(() => server.close());
-  const allocate = createOpenCodeSessionAllocator(() => '11111111-1111-4111-8111-111111111111');
-  const cfg = { ai: { provider: 'opencode-go', baseUrl: url } };
-  const options = { opencodeSessionRequestLimit: 2, allocateOpenCodeSession: allocate };
+test('sin snapshot exitoso omite solo el proveedor fallido y publica error sanitizado', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'key' });
+  const snapshot = await createAiModelCatalog({ fetchImpl: async url => {
+    if (String(url).includes('bad')) throw new Error('ECONNREFUSED https://bad.internal');
+    return jsonResponse({ data: [{ id: 'ok' }] });
+  } }).get({ ai: { providers: {
+    custom: { baseUrl: 'https://bad.internal' },
+    azure: { baseUrl: 'https://good.example/v1' }
+  } } });
 
-  await generateEntries(cfg, [{ term: 'first' }], options);
-  await generateEntries(cfg, [{ term: 'second' }], options);
-
-  assert.equal(headers[0]['user-agent'], OPENCODE_USER_AGENT);
-  assert.equal(headers[0]['x-opencode-session'], '11111111-1111-4111-8111-111111111111');
-  assert.equal(headers[1]['x-opencode-session'], headers[0]['x-opencode-session']);
-  assert.doesNotMatch(headers[0]['x-opencode-session'], /first|second/);
+  assert.deepEqual(snapshot.providers.map(provider => provider.id), ['azure']);
+  assert.deepEqual(snapshot.errors.map(error => error.provider), ['custom']);
+  assert.doesNotMatch(JSON.stringify(snapshot.errors), /bad\.internal|ECONNREFUSED/);
 });
 
-test('OpenCode Go rota la sesión antes de la solicitud N+1', async t => {
-  isolateKeyEnv(t, { OPENCODE_API_KEY: 'prueba' });
-  const sessions = [];
-  const ids = ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
-  const { server, url } = await mockProvider((body, req, res) => {
-    sessions.push(req.headers['x-opencode-session']);
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"choices":[{"message":{"content":"{\\"entries\\":[]}"}}]}');
-  });
-  t.after(() => server.close());
-  const options = { opencodeSessionRequestLimit: 2, allocateOpenCodeSession: createOpenCodeSessionAllocator(() => ids.shift()) };
-  const cfg = { ai: { provider: 'opencode-go', baseUrl: url } };
+test('publicAiInfo es async y resolveAi valida contra el snapshot descubierto', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'key' });
+  const snapshot = modelSnapshot('custom', [{ id: 'allowed', label: 'Permitido', protocol: 'chat', supportsTemperature: true }]);
+  const catalog = { get: async () => snapshot };
+  const cfg = { ai: { provider: 'custom', model: 'allowed', providers: { custom: { baseUrl: 'https://example.test/v1' } } } };
 
-  await Promise.all([1, 2, 3].map(term => generateEntries(cfg, [{ term: String(term) }], options)));
-
-  assert.deepEqual(sessions.sort(), [
-    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-  ].sort());
+  const infoPromise = publicAiInfo(cfg, { catalog });
+  assert.equal(typeof infoPromise.then, 'function');
+  assert.equal((await infoPromise).model, 'allowed');
+  assert.equal((await resolveAi(cfg, { provider: 'custom', model: 'allowed' }, { catalog })).enabled, true);
+  const rejected = await resolveAi(cfg, { provider: 'custom', model: 'injected' }, { catalog });
+  assert.equal(rejected.status, 400);
 });
 
-test('otros proveedores no reciben metadatos ni validación de sesión de OpenCode Go', async t => {
-  isolateKeyEnv(t, { AI_API_KEY: 'prueba' });
-  let headers;
-  const { server, url } = await mockProvider((body, req, res) => {
-    headers = req.headers;
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"choices":[{"message":{"content":"{\\"entries\\":[]}"}}]}');
-  });
-  t.after(() => server.close());
+test('genera por chat, Messages y Responses con autenticación separada del protocolo', async t => {
+  isolateKeyEnv(t, { AI_API_KEY: 'shared-key' });
+  const cases = [
+    { provider: 'custom', protocol: 'chat', suffix: '/chat/completions', response: { choices: [{ message: { content: '{"entries":[]}' } }] } },
+    { provider: 'anthropic', protocol: 'messages', suffix: '/messages', response: { content: [{ type: 'text', text: '{"entries":[]}' }] } },
+    { provider: 'openai', protocol: 'responses', suffix: '/responses', response: { output: [{ content: [{ type: 'output_text', text: '{"entries":[]}' }] }] } }
+  ];
+  for (const item of cases) {
+    let request;
+    const snapshot = modelSnapshot(item.provider, [{ id: 'model', label: 'Model', protocol: item.protocol, supportsTemperature: true }]);
+    const cfg = { ai: { providers: { [item.provider]: { baseUrl: 'https://provider.example/v1' } } } };
+    const result = await generateEntries(cfg, [{ term: 'word' }], {
+      provider: item.provider,
+      model: 'model',
+      catalog: { get: async () => snapshot },
+      fetchImpl: async (url, options) => { request = { url, options }; return jsonResponse(item.response); }
+    });
+    assert.equal(result.text, '{"entries":[]}');
+    assert.ok(request.url.endsWith(item.suffix));
+    if (item.protocol === 'messages') assert.equal(request.options.headers['x-api-key'], 'shared-key');
+    else assert.equal(request.options.headers.authorization, 'Bearer shared-key');
+  }
+});
 
+test('OpenCode Go conserva autenticación y sesión con transporte Messages y omite temperature no soportada', async t => {
+  isolateKeyEnv(t, { OPENCODE_API_KEY: 'go-key' });
+  let request;
+  const snapshot = modelSnapshot('opencode-go', [{ id: 'go-model', label: 'Go', protocol: 'messages', supportsTemperature: false }]);
   await generateEntries(
-    { ai: { provider: 'custom', baseUrl: url, model: 'm' } },
-    [{ term: 'x' }],
-    { opencodeSessionRequestLimit: 0 }
+    { ai: { temperature: 0.4, providers: { 'opencode-go': { baseUrl: 'https://go.example/v1' } } } },
+    [{ term: 'word' }],
+    {
+      provider: 'opencode-go', model: 'go-model', catalog: { get: async () => snapshot },
+      allocateOpenCodeSession: () => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      fetchImpl: async (url, options) => { request = { url, options }; return jsonResponse({ content: [{ type: 'text', text: '{"entries":[]}' }] }); }
+    }
   );
 
-  assert.equal(headers['x-opencode-session'], undefined);
-  assert.notEqual(headers['user-agent'], OPENCODE_USER_AGENT);
+  assert.equal(request.options.headers['user-agent'], OPENCODE_USER_AGENT);
+  assert.equal(request.options.headers['x-opencode-session'], 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  assert.equal(request.options.headers.authorization, 'Bearer go-key');
+  assert.equal(request.options.headers['x-api-key'], undefined);
+  assert.ok(request.url.endsWith('/messages'));
+  assert.equal(JSON.parse(request.options.body).temperature, undefined);
 });
 
-test('OpenCode Go rechaza límites de sesión fuera del rango seguro', async t => {
-  isolateKeyEnv(t, { OPENCODE_API_KEY: 'prueba' });
-  await assert.rejects(
-    generateEntries({ ai: { provider: 'opencode-go' } }, [{ term: 'x' }], { opencodeSessionRequestLimit: 1.5 }),
-    /entero entre 1 y 1000/
-  );
-});
-
-test('traduce los errores del proveedor a mensajes claros', async t => {
-  isolateKeyEnv(t, { AI_API_KEY: 'prueba' });
-  const { server, url } = await mockProvider((body, req, res) => {
-    res.writeHead(401, { 'content-type': 'application/json' });
-    res.end('{"error":{"message":"bad key"}}');
-  });
-  t.after(() => server.close());
-  const warn = console.warn; console.warn = () => {};
-  try {
-    await assert.rejects(
-      generateEntries({ ai: { provider: 'custom', baseUrl: url, model: 'm' } }, [{ term: 'x' }]),
-      /rechazó la clave de API/
-    );
-  } finally { console.warn = warn; }
+test('OpenCode Go rota la sesión antes de la solicitud N+1', () => {
+  const ids = ['a', 'b'];
+  const allocate = createOpenCodeSessionAllocator(() => ids.shift());
+  assert.deepEqual([allocate(2), allocate(2), allocate(2)], ['a', 'a', 'b']);
 });

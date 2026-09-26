@@ -36,6 +36,21 @@
     <button type="button" class="link-btn" id="logout">Cambiar clave</button>
   </p>
 
+  <section class="panel" id="aiDefaultPanel" hidden aria-labelledby="aiDefaultTitle">
+    <div class="model-catalog-head">
+      <h2 id="aiDefaultTitle">Modelo predeterminado</h2>
+      <button class="btn" id="aiModelsRefresh" type="button">Actualizar modelos</button>
+    </div>
+    <p class="catalog-status" id="aiCatalogStatus" aria-live="polite"></p>
+    <div class="catalog-errors" id="aiCatalogErrors"></div>
+    <p class="model-current" id="aiDefaultCurrent"></p>
+    <form id="aiDefaultForm">
+      <div class="model-default-list" id="aiDefaultModels"></div>
+      <button class="btn primary" id="aiDefaultSave" type="submit">Guardar como predeterminado</button>
+    </form>
+    <p class="hint" id="aiDefaultHint">Se guarda solo en este navegador. En el cuadro de creación puedes elegir temporalmente otro modelo.</p>
+  </section>
+
   <section class="panel" id="aiSettingsPanel" hidden aria-labelledby="aiSettingsTitle">
     <h2 id="aiSettingsTitle">Configuración de OpenCode Go</h2>
     <form id="aiSettingsForm" class="settings-form">

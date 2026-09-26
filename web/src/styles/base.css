@@ -190,3 +190,26 @@ a.btn.primary{color:var(--card)}
 .ai-meta{font-size:12px;color:var(--muted);margin:10px 0 0}
 .ai-actions{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px 16px;border-top:1px solid var(--line);margin-top:6px}
 .ai-actions[hidden]{display:none}
+.ai-model-control{border-top:1px solid var(--line);padding:10px 16px 14px}
+.ai-model-toggle{display:flex;align-items:center;gap:8px;width:100%;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink);padding:8px 10px;cursor:pointer;text-align:left}
+.ai-model-toggle span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-model-toggle[aria-expanded="true"],.ai-model-toggle:hover{color:var(--ink)}
+.ai-model-picker{margin-top:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 10px;max-height:230px;overflow:auto}
+.ai-model-picker[hidden]{display:none}
+.ai-model-help{font-size:12px;color:var(--muted);margin:6px 0 2px}
+.ai-model-warning{font-size:12px;color:var(--warn);margin:5px 0}
+.ai-model-group{border:0;margin:0;padding:8px 0}
+.ai-model-group + .ai-model-group{border-top:1px solid var(--line)}
+.ai-model-group legend{font-size:12px;font-weight:700;color:var(--muted);padding:0}
+.ai-model-option{display:flex;align-items:center;gap:8px;min-height:36px}
+.ai-model-option label{display:flex;align-items:center;gap:7px;min-width:0;flex:1;cursor:pointer}
+.ai-model-option input{accent-color:var(--focus);width:16px;height:16px;flex:none}
+.ai-model-option label span{overflow-wrap:anywhere}
+.ai-model-option small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.ai-model-default{display:grid;place-items:center;flex:none;width:28px;color:var(--muted)}
+.ai-model-default[aria-pressed="true"]{color:var(--warn)}
+.ai-model-default[aria-pressed="true"] svg{fill:currentColor}
+.ai-model-default svg{color:var(--warn);fill:currentColor}
+.ai-model-empty{font-size:13px;color:var(--warn);margin:8px 0}
+.ai-model-toggle:disabled,.ai-model-option input:disabled{opacity:.6;cursor:progress}
+@media (max-width:480px){.ai-dialog{width:calc(100vw - 12px);max-height:calc(100dvh - 12px)}.ai-model-picker{max-height:190px}}

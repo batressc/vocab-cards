@@ -12,6 +12,9 @@
   "ai": {
     "provider": "opencode-go",
     "model": "deepseek-v4-flash",
+    "providers": {
+      "opencode-go": {}
+    },
     "promptFile": "prompts/vocab-entry.prompt.md",
     "timeoutMs": 90000
   }

@@ -20,6 +20,31 @@ code{font-size:12.5px;background:var(--soft);border-radius:4px;padding:1px 5px}
 .settings-form label{display:grid;gap:4px;color:var(--muted);font-size:13px;font-weight:700}
 .settings-form input{width:130px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
 .settings-form input[aria-invalid="true"]{border-color:#C23B3B}
+.model-current{margin:0 0 10px;font-weight:700}
+.model-catalog-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.model-catalog-head h2{margin:0}
+.catalog-status{font-size:13px;color:var(--muted);margin:7px 0}
+.catalog-status.stale,.provider-stale{color:var(--warn)}
+.catalog-errors p{font-size:13px;color:var(--warn);margin:4px 0}
+.model-default-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:12px}
+.model-default-group{border:1px solid var(--line);border-radius:10px;margin:0;padding:7px 10px 9px;min-width:0}
+.model-default-group legend{padding:0 5px;font-size:13px;font-weight:700;color:var(--muted)}
+.model-default-option{display:flex;align-items:center;gap:8px;min-height:34px;padding:3px;border-radius:7px;cursor:pointer}
+.model-default-option:hover{background:var(--soft)}
+.model-default-option input{accent-color:var(--focus);width:16px;height:16px;flex:none}
+.model-default-option > span:nth-child(2){min-width:0;overflow-wrap:anywhere}
+.model-default-option small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+.model-default-star{display:grid;place-items:center;margin-left:auto;color:var(--muted);width:24px;flex:none}
+.model-default-star.active{color:var(--warn)}
+.model-default-star.active svg{fill:currentColor}
+.model-empty{grid-column:1/-1;color:var(--warn);margin:0 0 4px}
+.provider-stale{font-size:11px;margin:5px 3px 0}
+
+@media (max-width:520px){
+  .page{padding-left:12px;padding-right:12px}
+  .panel{padding:16px 14px}
+  .model-default-list{grid-template-columns:1fr}
+}
 
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:-4px 0 14px;overflow-x:auto}
 .tabs [role=tab]{border:0;background:transparent;padding:9px 12px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;font-size:14px}

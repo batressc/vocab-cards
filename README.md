@@ -73,10 +73,12 @@ secretos van en `.env`, que Git ignora.
 | `trustProxy` | `false` | Pon `1` detrás de Nginx o IIS. |
 | `host` / `port` | `0.0.0.0` / `3000` | Dónde escucha el servidor. |
 | `ai.provider` | `opencode-go` | `opencode-go`, `gemini`, `openai`, `anthropic`, `azure`, `ollama` o `custom`. |
-| `ai.model` | según proveedor | Modelo a usar. |
+| `ai.model` | según proveedor | Modelo de fallback y predeterminado inicial. |
+| `ai.providers` | `{"opencode-go": {}}` | Proveedores cuyos modelos se descubren desde sus APIs oficiales. |
 | `ai.baseUrl` | según proveedor | Obligatorio para `azure` y `custom`. |
 | `ai.promptFile` | `prompts/vocab-entry.prompt.md` | Prompt de sistema. |
 | `ai.timeoutMs` | `90000` | Tiempo máximo de espera de la IA. |
+| `ai.catalogTtlMs` / `ai.catalogTimeoutMs` | `300000` / `10000` | Vigencia de la caché y timeout de descubrimiento. |
 | `ai.jsonMode` | según proveedor | `false` si el proveedor rechaza `response_format`. |
 
 Variables de entorno (`.env`):
@@ -86,6 +88,50 @@ Variables de entorno (`.env`):
 
 Las suscripciones web (ChatGPT Plus, la app de Gemini, Copilot) no incluyen
 acceso por API: se necesita una clave de API del proveedor.
+
+`ai.providers` controla qué proveedores se consultan. NO contiene listas de
+modelos: el servidor obtiene los IDs autorizados desde el catálogo oficial de
+cada proveedor. Por defecto solo se configura `opencode-go`; Ollama no se
+consulta ni aparece salvo que exista una entrada explícita. Para habilitar
+otros proveedores, agrega entradas vacías o sus opciones no secretas:
+
+```json
+{
+  "ai": {
+    "providers": {
+      "opencode-go": {},
+      "openai": {},
+      "anthropic": {},
+      "gemini": {},
+      "ollama": {},
+      "custom": { "baseUrl": "https://proveedor.example/v1" }
+    }
+  }
+}
+```
+
+OpenCode Go usa `https://opencode.ai/zen/go/v1/models`; no se mezcla con el
+producto OpenCode Zen. OpenAI usa `/v1/models`, Anthropic pagina `/v1/models`,
+Gemini usa su listado nativo y Ollama usa `/api/tags`. `custom` y `azure`
+consultan `{baseUrl}/models`; si el servicio no ofrece discovery, el proveedor
+publica un error en vez de inventar modelos. Cada proveedor admite `baseUrl`,
+`catalogUrl`, `auth`, `jsonMode`, `temperature`, `timeoutMs` y `maxTerms`. Usa
+`"auth": "none"` solo para un servicio compatible que realmente no requiera clave.
+
+El catálogo se guarda cinco minutos en memoria y deduplica actualizaciones
+concurrentes. Si una actualización falla después de un éxito, se conserva el
+último snapshot marcado como desactualizado; sin un snapshot previo se omite
+solo ese proveedor. Las rutas públicas exponen IDs, etiquetas, frescura y
+errores sanitizados, nunca claves ni URLs internas. **Actualizar modelos** en
+Administración fuerza una consulta nueva con la autenticación administrativa.
+
+En **Agregar tarjetas → Modelo predeterminado**, Administración permite elegir
+el modelo inicial del navegador. La estrella resalta el actual y el valor se
+guarda en `localStorage` con la clave `vocab-ai-default-model`. Al abrir **Crear
+con IA**, el selector parte de ese predeterminado, pero cualquier alternativa
+elegida allí solo dura mientras el cuadro permanece abierto. Si el valor
+guardado quedó obsoleto o corrupto, se usa `ai.provider` + `ai.model` si ese par
+aparece en el snapshot oficial; en otro caso se usa el primer modelo descubierto.
 
 ### Sesiones de OpenCode Go
 

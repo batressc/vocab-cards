@@ -1,7 +1,10 @@
 /* Pantalla "Agregar tarjetas": texto pegado, archivos o carpeta del servidor.
    Flujo: Revisar (dryRun) → tabla de resultados → Guardar. */
 
-import { $, esc, store, fmtDateTime, plural, toast, ADMIN_TOKEN_KEY, OPENCODE_SESSION_LIMIT_KEY } from '../../shared/utils.js';
+import {
+  $, esc, store, fmtDateTime, plural, toast, findAiModel, resolveAiDefaultModel,
+  ADMIN_TOKEN_KEY, OPENCODE_SESSION_LIMIT_KEY, AI_DEFAULT_MODEL_KEY
+} from '../../shared/utils.js';
 
 const fmtSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 
@@ -63,13 +66,84 @@ function showSession(){
   $('#sessionText').textContent = `Sesión de administración activa. ${plural(state.info.total, 'tarjeta guardada', 'tarjetas guardadas')}.`;
   $('#folderName').textContent = state.info.dataFolder;
   $('#limitHint').textContent = `Hasta ${fmtSize(state.info.maxImportBytes)} por archivo.`;
+  renderAiDefaultSettings();
   renderAiSettings();
 }
+
+const MODEL_STAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>';
+
+function renderAiDefaultSettings(){
+  const panel = $('#aiDefaultPanel');
+  const info = state.info.ai || {};
+  const preferred = resolveAiDefaultModel(info);
+  const current = findAiModel(info, preferred);
+  const providers = Array.isArray(info.providers) ? info.providers : [];
+  panel.hidden = false;
+  const fetched = info.fetchedAt ? fmtDateTime(info.fetchedAt) : '';
+  $('#aiCatalogStatus').textContent = info.stale
+    ? `Catálogo desactualizado${fetched ? `; último resultado disponible: ${fetched}` : ''}.`
+    : fetched ? `Catálogo actualizado: ${fetched}.` : 'El catálogo todavía no se ha actualizado.';
+  $('#aiCatalogStatus').classList.toggle('stale', Boolean(info.stale));
+  $('#aiCatalogErrors').innerHTML = (info.errors || []).map(error => `<p>${esc(error.message)}</p>`).join('');
+  $('#aiDefaultCurrent').textContent = current
+    ? `Actual en este navegador: ${current.provider.label} · ${current.model.label}`
+    : 'No hay un modelo predeterminado disponible.';
+  $('#aiDefaultModels').innerHTML = providers.length ? providers.map(provider => `
+    <fieldset class="model-default-group">
+      <legend>${esc(provider.label)}</legend>
+      ${provider.models.map(model => {
+        const active = provider.id === preferred?.provider && model.id === preferred?.model;
+        return `<label class="model-default-option">
+          <input type="radio" name="default-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${active ? ' checked' : ''}>
+          <span>${esc(model.label)}${model.group ? `<small>${esc(model.group)}</small>` : ''}</span>
+          <span class="model-default-star${active ? ' active' : ''}" title="${active ? 'Predeterminado actual' : 'No es el predeterminado'}">${MODEL_STAR}<span class="sr-only">${active ? 'Predeterminado actual' : ''}</span></span>
+        </label>`;
+      }).join('')}
+      ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
+    </fieldset>`).join('') : '<p class="model-empty">No hay modelos disponibles. Revisa los proveedores configurados, sus claves y los errores del catálogo.</p>';
+  $('#aiDefaultSave').disabled = !preferred;
+}
+
+$('#aiModelsRefresh').addEventListener('click', async () => {
+  const button = $('#aiModelsRefresh');
+  button.disabled = true;
+  button.textContent = 'Actualizando…';
+  $('#aiCatalogStatus').textContent = 'Consultando los catálogos oficiales…';
+  try {
+    state.info.ai = await adminApi('ai/models/refresh', { method: 'POST', body: '{}' });
+    renderAiDefaultSettings();
+    toast(state.info.ai.stale ? 'Catálogo actualizado parcialmente.' : 'Catálogo de modelos actualizado.');
+  } catch (err) {
+    $('#aiCatalogStatus').textContent = err.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Actualizar modelos';
+  }
+});
+
+$('#aiDefaultForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.querySelector('input[name="default-model"]:checked');
+  const next = input && { provider: input.dataset.provider, model: input.value };
+  if (!findAiModel(state.info.ai, next)) {
+    $('#aiDefaultHint').textContent = 'Selecciona un modelo disponible antes de guardar.';
+    return;
+  }
+  if (!store.set(AI_DEFAULT_MODEL_KEY, next)) {
+    $('#aiDefaultHint').textContent = 'El navegador denegó el almacenamiento. Revisa sus permisos e inténtalo de nuevo.';
+    toast('No se pudo guardar el modelo predeterminado en este navegador.');
+    return;
+  }
+  renderAiDefaultSettings();
+  $('#aiDefaultHint').textContent = 'Predeterminado guardado en este navegador. Las selecciones del cuadro de creación siguen siendo temporales.';
+  document.querySelector('input[name="default-model"]:checked')?.focus();
+  toast('Modelo predeterminado guardado.');
+});
 
 function renderAiSettings(){
   const panel = $('#aiSettingsPanel');
   const limits = state.info.opencodeSessionLimit;
-  panel.hidden = state.info.ai?.provider !== 'opencode-go';
+  panel.hidden = !state.info.ai?.providers?.some(provider => provider.id === 'opencode-go');
   if (panel.hidden) return;
   const input = $('#opencodeSessionLimit');
   input.min = limits.min;
@@ -102,6 +176,7 @@ function logout(message){
   $('#importPanel').hidden = true;
   $('#resultPanel').hidden = true;
   $('#extraPanel').hidden = true;
+  $('#aiDefaultPanel').hidden = true;
   $('#aiSettingsPanel').hidden = true;
   if (message) $('#authMsg').textContent = message;
   $('#token').value = '';
