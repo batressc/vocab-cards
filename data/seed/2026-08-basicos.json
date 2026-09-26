@@ -1,0 +1,364 @@
+{
+  "$schema": "../../schema/vocab-entries.schema.json",
+  "entries": [
+    {
+      "id": "actually",
+      "kind": "word",
+      "head": "actually",
+      "say": "actually",
+      "tags": [
+        "adverb",
+        "falso amigo"
+      ],
+      "level": "A2",
+      "ipa": "/ˈæktʃuəli/",
+      "lat": "ÁK-chu-a-li",
+      "meaning": "En realidad; de hecho.",
+      "ex": {
+        "en": "Actually, I'm from El Salvador, not Mexico.",
+        "es": "En realidad soy de El Salvador, no de México."
+      },
+      "contexts": [
+        {
+          "title": "Corregir",
+          "text": "aclarar un dato equivocado."
+        },
+        {
+          "title": "Sorpresa",
+          "text": "It's actually pretty good: la verdad está bastante bueno."
+        },
+        {
+          "title": "Suavizar",
+          "text": "disentir con cortesía."
+        }
+      ],
+      "formsLabel": "Familia",
+      "forms": [
+        "actual (real, verdadero)"
+      ],
+      "examples": [
+        {
+          "en": "The movie was actually better than the book.",
+          "es": "La película fue, de hecho, mejor que el libro."
+        },
+        {
+          "en": "I actually don't agree.",
+          "es": "La verdad es que no estoy de acuerdo."
+        }
+      ],
+      "note": "Falso amigo: “actualmente” se dice currently o nowadays.",
+      "related": [
+        "in fact",
+        "really",
+        "currently (≠)"
+      ],
+      "addedAt": "2026-08-05T15:00:00Z"
+    },
+    {
+      "id": "piece-of-cake",
+      "kind": "idiom",
+      "head": "a piece of cake",
+      "say": "a piece of cake",
+      "tags": [
+        "noun phrase",
+        "informal"
+      ],
+      "level": "A2",
+      "ipa": "/ə ˌpis əv ˈkeɪk/",
+      "lat": "a-PÍS-ov-KÉIK",
+      "meaning": "Algo muy fácil; pan comido.",
+      "ex": {
+        "en": "The exam was a piece of cake.",
+        "es": "El examen fue pan comido."
+      },
+      "contexts": [
+        {
+          "title": "Tareas fáciles",
+          "text": "describir algo que no costó esfuerzo."
+        },
+        {
+          "title": "Ironía",
+          "text": "dicho con sarcasmo significa lo contrario."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "piece of cake (sin a, al responder)"
+      ],
+      "examples": [
+        {
+          "en": "“Can you fix it?” “Piece of cake.”",
+          "es": "“¿Lo puedes arreglar?” “Pan comido.”"
+        },
+        {
+          "en": "Setting up the router was a piece of cake.",
+          "es": "Configurar el router fue facilísimo."
+        }
+      ],
+      "note": "Es una expresión fija: no se pluraliza ni se dice the piece of cake.",
+      "related": [
+        "easy peasy",
+        "no sweat"
+      ],
+      "addedAt": "2026-08-09T15:00:00Z"
+    },
+    {
+      "id": "hows-it-going",
+      "kind": "phrase",
+      "head": "How’s it going?",
+      "say": "How’s it going?",
+      "tags": [
+        "saludo",
+        "informal"
+      ],
+      "level": "A2",
+      "ipa": "/ˌhaʊz ɪt ˈɡoʊɪŋ/",
+      "lat": "jáus-it-GÓU-in",
+      "meaning": "¿Qué tal? ¿Cómo va todo?",
+      "ex": {
+        "en": "Hey Mike, how’s it going?",
+        "es": "Hola Mike, ¿qué tal?"
+      },
+      "contexts": [
+        {
+          "title": "Saludo casual",
+          "text": "con amigos o compañeros."
+        },
+        {
+          "title": "Algo concreto",
+          "text": "How’s the project going? ¿Cómo va el proyecto?"
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "How’s everything going?",
+        "How are things?",
+        "What’s up?"
+      ],
+      "examples": [
+        {
+          "en": "Pretty good, thanks. You?",
+          "es": "Bastante bien, gracias. ¿Y tú?"
+        },
+        {
+          "en": "Not bad, just busy with work.",
+          "es": "Nada mal, solo ocupado con el trabajo."
+        }
+      ],
+      "note": "Es un saludo, no una pregunta real: responde corto y devuelve la pregunta.",
+      "related": [
+        "How are you doing?",
+        "What’s new?"
+      ],
+      "addedAt": "2026-08-12T15:00:00Z"
+    },
+    {
+      "id": "achoo",
+      "kind": "onomatopoeia",
+      "head": "achoo",
+      "say": "ah choo",
+      "tags": [
+        "interjection"
+      ],
+      "level": "A2",
+      "ipa": "/əˈtʃu/",
+      "lat": "a-CHÚ",
+      "meaning": "¡Achís! El sonido de un estornudo.",
+      "ex": {
+        "en": "“Achoo!” “Bless you!”",
+        "es": "“¡Achís!” “¡Salud!”"
+      },
+      "contexts": [
+        {
+          "title": "Estornudo",
+          "text": "se escribe en diálogos y chats."
+        },
+        {
+          "title": "Cortesía",
+          "text": "al estornudar alguien se dice Bless you."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "atchoo",
+        "ahchoo",
+        "verbo: sneeze"
+      ],
+      "examples": [
+        {
+          "en": "I sneezed three times in a row.",
+          "es": "Estornudé tres veces seguidas."
+        },
+        {
+          "en": "“Bless you.” “Thank you.”",
+          "es": "“Salud.” “Gracias.”"
+        }
+      ],
+      "note": "La respuesta esperada a Bless you es Thank you.",
+      "related": [
+        "sneeze",
+        "Bless you"
+      ],
+      "addedAt": "2026-08-18T15:00:00Z"
+    },
+    {
+      "id": "themselves",
+      "kind": "word",
+      "head": "themselves",
+      "say": "themselves",
+      "tags": [
+        "pronoun",
+        "reflexivo"
+      ],
+      "level": "A2",
+      "ipa": "/ðəmˈsɛlvz/",
+      "lat": "dem-SÉLVS",
+      "meaning": "Ellos mismos; se (reflexivo).",
+      "ex": {
+        "en": "They enjoyed themselves at the party.",
+        "es": "Se divirtieron en la fiesta."
+      },
+      "contexts": [
+        {
+          "title": "Reflexivo",
+          "text": "la acción recae sobre el sujeto."
+        },
+        {
+          "title": "Énfasis",
+          "text": "they built it themselves: lo construyeron ellos mismos."
+        },
+        {
+          "title": "by themselves",
+          "text": "solos, sin ayuda."
+        }
+      ],
+      "formsLabel": "Familia",
+      "forms": [
+        "myself",
+        "yourself",
+        "himself",
+        "herself",
+        "itself",
+        "ourselves",
+        "yourselves",
+        "themselves"
+      ],
+      "examples": [
+        {
+          "en": "The kids made breakfast by themselves.",
+          "es": "Los niños hicieron el desayuno solos."
+        },
+        {
+          "en": "They blamed themselves for the mistake.",
+          "es": "Se culparon a sí mismos por el error."
+        }
+      ],
+      "note": "La th es vibrante /ð/, como la d de “nada”. Plural -selves, singular -self.",
+      "related": [
+        "each other",
+        "own"
+      ],
+      "addedAt": "2026-08-22T15:00:00Z"
+    },
+    {
+      "id": "meow",
+      "kind": "onomatopoeia",
+      "head": "meow",
+      "say": "meow",
+      "tags": [
+        "noun",
+        "verb"
+      ],
+      "level": "A1",
+      "ipa": "/miˈaʊ/",
+      "lat": "mi-ÁU",
+      "meaning": "¡Miau! El maullido de un gato.",
+      "ex": {
+        "en": "The cat meowed at the door.",
+        "es": "El gato maulló en la puerta."
+      },
+      "contexts": [
+        {
+          "title": "Sonido",
+          "text": "el maullido del gato."
+        },
+        {
+          "title": "Verbo",
+          "text": "to meow: maullar."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "meows",
+        "meowed",
+        "meowing"
+      ],
+      "examples": [
+        {
+          "en": "My cat meows when she is hungry.",
+          "es": "Mi gata maúlla cuando tiene hambre."
+        },
+        {
+          "en": "We heard a soft meow outside.",
+          "es": "Oímos un maullido suave afuera."
+        }
+      ],
+      "note": "En inglés británico también se escribe miaow.",
+      "related": [
+        "purr",
+        "hiss"
+      ],
+      "addedAt": "2026-08-26T15:00:00Z"
+    },
+    {
+      "id": "its-up-to-you",
+      "kind": "phrase",
+      "head": "It’s up to you",
+      "say": "It’s up to you",
+      "tags": [
+        "decisión",
+        "informal"
+      ],
+      "level": "A2",
+      "ipa": "/ɪts ˈʌp tə ju/",
+      "lat": "its-ÁP-tu-iu",
+      "meaning": "Depende de ti; tú decides.",
+      "ex": {
+        "en": "Pizza or tacos? It’s up to you.",
+        "es": "¿Pizza o tacos? Tú decides."
+      },
+      "contexts": [
+        {
+          "title": "Ceder la decisión",
+          "text": "dejar que el otro elija."
+        },
+        {
+          "title": "Responsabilidad",
+          "text": "It’s up to you to finish it: te toca a ti terminarlo."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "It’s up to me",
+        "It’s your call",
+        "Up to you"
+      ],
+      "examples": [
+        {
+          "en": "It’s up to the team to decide the deadline.",
+          "es": "Le toca al equipo decidir la fecha límite."
+        },
+        {
+          "en": "Whatever you want, it’s up to you.",
+          "es": "Lo que quieras, tú decides."
+        }
+      ],
+      "note": "Up to también significa “hasta”: up to 50 people. El contexto lo aclara.",
+      "related": [
+        "your call",
+        "whatever you prefer"
+      ],
+      "addedAt": "2026-08-28T15:00:00Z"
+    }
+  ]
+}

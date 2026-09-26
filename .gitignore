@@ -1,0 +1,35 @@
+# Dependencias y build
+node_modules/
+dist/
+.vite/
+
+# Base de datos local (se crea al arrancar; los datos de ejemplo están en data/seed/)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+*.sqlite
+*.sqlite3
+
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Registros y cobertura
+*.log
+npm-debug.log*
+logs/
+coverage/
+
+# Tooling local (caché del registro de skills, rutas de esta máquina)
+.atl/
+
+# Editores y sistema operativo
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,364 @@
+{
+  "$schema": "../../schema/vocab-entries.schema.json",
+  "entries": [
+    {
+      "id": "give-up",
+      "kind": "phrasal",
+      "head": "give up",
+      "say": "give up",
+      "tags": [
+        "separable"
+      ],
+      "level": "B1",
+      "ipa": "/ɡɪv ˈʌp/",
+      "lat": "guiv-ÁP",
+      "meaning": "Rendirse; dejar de hacer algo.",
+      "ex": {
+        "en": "Don’t give up now, you’re almost there.",
+        "es": "No te rindas ahora, ya casi llegas."
+      },
+      "contexts": [
+        {
+          "title": "Rendirse",
+          "text": "dejar de intentar algo difícil."
+        },
+        {
+          "title": "Dejar un hábito",
+          "text": "give up smoking, give up sugar."
+        },
+        {
+          "title": "Ceder algo",
+          "text": "give up your seat: ceder tu asiento."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "give up",
+        "gives up",
+        "gave up",
+        "given up",
+        "giving up"
+      ],
+      "examples": [
+        {
+          "en": "I gave up sugar for a month.",
+          "es": "Dejé el azúcar por un mes."
+        },
+        {
+          "en": "She gave her seat up for an older man.",
+          "es": "Le cedió su asiento a un señor mayor."
+        }
+      ],
+      "note": "Separable: con pronombre va en medio. Se dice give it up, nunca give up it.",
+      "related": [
+        "quit",
+        "stop",
+        "surrender"
+      ],
+      "addedAt": "2026-09-02T15:00:00Z"
+    },
+    {
+      "id": "run-into",
+      "kind": "phrasal",
+      "head": "run into",
+      "say": "run into",
+      "tags": [
+        "inseparable"
+      ],
+      "level": "B1",
+      "ipa": "/rʌn ˈɪntu/",
+      "lat": "ran-ÍN-tu",
+      "meaning": "Encontrarse con alguien por casualidad.",
+      "ex": {
+        "en": "I ran into my old teacher at the mall.",
+        "es": "Me encontré a mi antiguo profesor en el centro comercial."
+      },
+      "contexts": [
+        {
+          "title": "Encuentro casual",
+          "text": "ver a alguien sin planearlo."
+        },
+        {
+          "title": "Problemas",
+          "text": "run into trouble: toparse con dificultades."
+        },
+        {
+          "title": "Choque físico",
+          "text": "golpearse contra algo."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "run into",
+        "runs into",
+        "ran into",
+        "run into",
+        "running into"
+      ],
+      "examples": [
+        {
+          "en": "We ran into some problems with the database.",
+          "es": "Nos topamos con algunos problemas en la base de datos."
+        },
+        {
+          "en": "He ran into a wall while texting.",
+          "es": "Chocó contra una pared mientras escribía mensajes."
+        }
+      ],
+      "note": "Inseparable: run into her, no run her into. Run es irregular: run, ran, run.",
+      "related": [
+        "bump into",
+        "come across"
+      ],
+      "addedAt": "2026-09-03T15:00:00Z"
+    },
+    {
+      "id": "get-along-with",
+      "kind": "phrasal",
+      "head": "get along with",
+      "say": "get along with",
+      "tags": [
+        "3 partes"
+      ],
+      "level": "B1",
+      "ipa": "/ɡɛt əˈlɔŋ wɪð/",
+      "lat": "guet-a-LÓNG-uid",
+      "meaning": "Llevarse bien con alguien.",
+      "ex": {
+        "en": "I get along with all my coworkers.",
+        "es": "Me llevo bien con todos mis compañeros de trabajo."
+      },
+      "contexts": [
+        {
+          "title": "Relaciones",
+          "text": "llevarse bien con alguien."
+        },
+        {
+          "title": "Progreso",
+          "text": "How are you getting along? ¿Cómo te va con eso?"
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "get along",
+        "gets along",
+        "got along",
+        "gotten along",
+        "getting along"
+      ],
+      "examples": [
+        {
+          "en": "My sister and I didn’t get along as kids.",
+          "es": "Mi hermana y yo no nos llevábamos bien de niños."
+        },
+        {
+          "en": "How are you getting along with the new project?",
+          "es": "¿Cómo vas con el proyecto nuevo?"
+        }
+      ],
+      "note": "En EE. UU. el participio es gotten; en Reino Unido es got y se usa más get on with.",
+      "related": [
+        "get on with",
+        "hit it off"
+      ],
+      "addedAt": "2026-09-05T15:00:00Z"
+    },
+    {
+      "id": "look-forward-to",
+      "kind": "phrasal",
+      "head": "look forward to",
+      "say": "look forward to",
+      "tags": [
+        "+ verbo -ing"
+      ],
+      "level": "B1",
+      "ipa": "/lʊk ˈfɔrwərd tu/",
+      "lat": "luk-FÓR-uerd-tu",
+      "meaning": "Tener ganas de algo; esperarlo con ilusión.",
+      "ex": {
+        "en": "I’m looking forward to the weekend.",
+        "es": "Tengo muchas ganas de que llegue el fin de semana."
+      },
+      "contexts": [
+        {
+          "title": "Conversación",
+          "text": "I’m looking forward to it: ¡qué ganas!"
+        },
+        {
+          "title": "Correo formal",
+          "text": "I look forward to hearing from you: quedo atento a su respuesta."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "looks forward to",
+        "looked forward to",
+        "looking forward to"
+      ],
+      "examples": [
+        {
+          "en": "We look forward to working with you.",
+          "es": "Esperamos con interés trabajar con usted."
+        },
+        {
+          "en": "She’s not looking forward to the meeting.",
+          "es": "No tiene ganas de ir a la reunión."
+        }
+      ],
+      "note": "Después de to va sustantivo o verbo en -ing: looking forward to seeing you, nunca to see.",
+      "related": [
+        "can’t wait for",
+        "be excited about"
+      ],
+      "addedAt": "2026-09-07T15:00:00Z"
+    },
+    {
+      "id": "figure-out",
+      "kind": "phrasal",
+      "head": "figure out",
+      "say": "figure out",
+      "tags": [
+        "separable"
+      ],
+      "level": "B1",
+      "ipa": "/ˈfɪɡjər ˈaʊt/",
+      "lat": "FÍ-guiur-ÁUT",
+      "meaning": "Entender o resolver algo después de pensarlo.",
+      "ex": {
+        "en": "I can’t figure out this error.",
+        "es": "No logro entender este error."
+      },
+      "contexts": [
+        {
+          "title": "Resolver",
+          "text": "encontrar la solución a un problema."
+        },
+        {
+          "title": "Entender a alguien",
+          "text": "I can’t figure him out: no lo entiendo."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "figures out",
+        "figured out",
+        "figuring out"
+      ],
+      "examples": [
+        {
+          "en": "We finally figured out why the build failed.",
+          "es": "Por fin entendimos por qué falló el build."
+        },
+        {
+          "en": "Let me figure it out.",
+          "es": "Déjame averiguarlo."
+        }
+      ],
+      "note": "Separable: figure it out, nunca figure out it.",
+      "related": [
+        "work out",
+        "solve"
+      ],
+      "addedAt": "2026-09-09T15:00:00Z"
+    },
+    {
+      "id": "hang-out",
+      "kind": "phrasal",
+      "head": "hang out",
+      "say": "hang out",
+      "tags": [
+        "intransitivo",
+        "informal"
+      ],
+      "level": "A2",
+      "ipa": "/hæŋ ˈaʊt/",
+      "lat": "jeng-ÁUT",
+      "meaning": "Pasar el rato; salir con amigos.",
+      "ex": {
+        "en": "Do you want to hang out this weekend?",
+        "es": "¿Quieres salir este fin de semana?"
+      },
+      "contexts": [
+        {
+          "title": "Socializar",
+          "text": "pasar tiempo sin un plan fijo."
+        },
+        {
+          "title": "Lugar habitual",
+          "text": "a hangout: un lugar donde se reúnen."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "hangs out",
+        "hung out",
+        "hanging out"
+      ],
+      "examples": [
+        {
+          "en": "We hung out at the beach all day.",
+          "es": "Pasamos todo el día en la playa."
+        },
+        {
+          "en": "That café is our favorite hangout.",
+          "es": "Ese café es nuestro lugar favorito."
+        }
+      ],
+      "note": "Con este sentido el pasado es hung. Hanged solo se usa para ahorcar.",
+      "related": [
+        "chill",
+        "get together"
+      ],
+      "addedAt": "2026-09-10T15:00:00Z"
+    },
+    {
+      "id": "call-off",
+      "kind": "phrasal",
+      "head": "call off",
+      "say": "call off",
+      "tags": [
+        "separable"
+      ],
+      "level": "B1",
+      "ipa": "/kɔl ˈɔf/",
+      "lat": "col-ÓF",
+      "meaning": "Cancelar algo planeado.",
+      "ex": {
+        "en": "They called off the meeting.",
+        "es": "Cancelaron la reunión."
+      },
+      "contexts": [
+        {
+          "title": "Eventos",
+          "text": "cancelar una reunión, un partido o una boda."
+        },
+        {
+          "title": "Detener",
+          "text": "call off the search: suspender la búsqueda."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "calls off",
+        "called off",
+        "calling off"
+      ],
+      "examples": [
+        {
+          "en": "The game was called off because of the rain.",
+          "es": "El partido se canceló por la lluvia."
+        },
+        {
+          "en": "Let’s call it off.",
+          "es": "Mejor cancelémoslo."
+        }
+      ],
+      "note": "Se usa mucho en pasiva: was called off.",
+      "related": [
+        "cancel",
+        "put off (≠ posponer)"
+      ],
+      "addedAt": "2026-09-12T15:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agregar tarjetas · Tarjetas de inglés</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Noto+Sans:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/import.css">
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <a class="back-link" href="./">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      Volver a las tarjetas
+    </a>
+    <h1>Agregar tarjetas</h1>
+    <p class="lead">Pega el JSON que generó la IA o sube archivos. Primero se revisa el contenido y después se guarda en la base de datos.</p>
+  </header>
+
+  <!-- Acceso -->
+  <section class="panel" id="authPanel" aria-labelledby="authTitle">
+    <h2 id="authTitle">Clave de administración</h2>
+    <form id="authForm" class="auth-form">
+      <input id="token" type="password" autocomplete="current-password" placeholder="Escribe la clave" aria-label="Clave de administración" required>
+      <button class="btn primary" type="submit">Entrar</button>
+    </form>
+    <p class="hint" id="authMsg">Se guarda solo en este navegador. La clave se define en <code>config.json</code> (<code>adminToken</code>) o en la variable <code>ADMIN_TOKEN</code>.</p>
+  </section>
+
+  <p class="session" id="session" hidden>
+    <span id="sessionText"></span>
+    <button type="button" class="link-btn" id="logout">Cambiar clave</button>
+  </p>
+
+  <!-- Importación -->
+  <section class="panel" id="importPanel" hidden aria-labelledby="importTitle">
+    <h2 id="importTitle" class="sr-only">Contenido a importar</h2>
+    <div class="tabs" role="tablist" aria-label="Origen del contenido">
+      <button type="button" role="tab" id="tab-text" aria-controls="pane-text" aria-selected="true">Pegar JSON</button>
+      <button type="button" role="tab" id="tab-files" aria-controls="pane-files" aria-selected="false" tabindex="-1">Subir archivos</button>
+      <button type="button" role="tab" id="tab-folder" aria-controls="pane-folder" aria-selected="false" tabindex="-1">Carpeta del servidor</button>
+    </div>
+
+    <div class="pane" role="tabpanel" id="pane-text" aria-labelledby="tab-text">
+      <textarea id="jsonText" spellcheck="false" placeholder='Pega aquí el JSON. Puede ser la respuesta de la IA completa, con el bloque ```json incluido.&#10;&#10;{ "entries": [ { "head": "give up", "meaning": "Rendirse", ... } ] }'></textarea>
+      <p class="hint" id="textInfo">Acepta un arreglo de entradas, un objeto con "entries" o una sola entrada.</p>
+    </div>
+
+    <div class="pane" role="tabpanel" id="pane-files" aria-labelledby="tab-files" hidden>
+      <label class="drop" id="drop">
+        <input type="file" id="fileInput" accept=".json,application/json" multiple>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M20 16v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3"/></svg>
+        <span><b>Elige archivos .json</b> o arrástralos aquí</span>
+        <span class="hint" id="limitHint"></span>
+      </label>
+      <ul class="file-list" id="fileList"></ul>
+    </div>
+
+    <div class="pane" role="tabpanel" id="pane-folder" aria-labelledby="tab-folder" hidden>
+      <p>Importa todos los archivos <code>.json</code> de la carpeta <code id="folderName">data/vocab</code> del servidor. Útil si alguna vez copias archivos allí directamente.</p>
+    </div>
+
+    <fieldset class="mode">
+      <legend>Si una tarjeta ya existe (mismo id)</legend>
+      <label><input type="radio" name="mode" value="update" checked> Reemplazarla con la nueva versión</label>
+      <label><input type="radio" name="mode" value="keep"> Conservar la que ya está guardada</label>
+    </fieldset>
+
+    <div class="actions">
+      <button type="button" class="btn" id="reviewBtn">Revisar</button>
+      <button type="button" class="btn primary" id="saveBtn" disabled>Guardar</button>
+      <span class="hint" id="actionHint">Revisa el contenido para poder guardarlo.</span>
+    </div>
+  </section>
+
+  <!-- Resultado -->
+  <section class="panel" id="resultPanel" hidden aria-live="polite" aria-labelledby="resultTitle">
+    <h2 id="resultTitle">Revisión</h2>
+    <div class="summary" id="summary"></div>
+    <div class="table-wrap">
+      <table class="results">
+        <thead><tr><th scope="col">Estado</th><th scope="col">Palabra o frase</th><th scope="col">Id</th><th scope="col">Tipo</th><th scope="col">Nivel</th><th scope="col">Origen</th><th scope="col">Detalle</th></tr></thead>
+        <tbody id="resultRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Respaldo e historial -->
+  <section class="panel" id="extraPanel" hidden aria-labelledby="historyTitle">
+    <div class="extra-head">
+      <h2 id="historyTitle">Últimas importaciones</h2>
+      <a class="btn" href="api/vocab/export" download>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg>
+        Descargar respaldo JSON
+      </a>
+    </div>
+    <div class="table-wrap">
+      <table class="results history">
+        <thead><tr><th scope="col">Fecha</th><th scope="col">Origen</th><th scope="col">Nuevas</th><th scope="col">Actualizadas</th><th scope="col">Sin cambios</th><th scope="col">Omitidas</th><th scope="col">Errores</th></tr></thead>
+        <tbody id="historyRows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script type="module" src="/src/pages/import/import.js"></script>
+</body>
+</html>

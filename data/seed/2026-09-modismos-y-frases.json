@@ -1,0 +1,196 @@
+{
+  "$schema": "../../schema/vocab-entries.schema.json",
+  "entries": [
+    {
+      "id": "break-the-ice",
+      "kind": "idiom",
+      "head": "break the ice",
+      "say": "break the ice",
+      "tags": [
+        "verb phrase"
+      ],
+      "level": "B1",
+      "ipa": "/ˌbreɪk ði ˈaɪs/",
+      "lat": "breik-di-ÁIS",
+      "meaning": "Romper el hielo.",
+      "ex": {
+        "en": "He told a joke to break the ice.",
+        "es": "Contó un chiste para romper el hielo."
+      },
+      "contexts": [
+        {
+          "title": "Social",
+          "text": "iniciar la conversación con desconocidos."
+        },
+        {
+          "title": "Trabajo",
+          "text": "dinámicas al inicio de una reunión o curso."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "breaks the ice",
+        "broke the ice",
+        "broken the ice",
+        "breaking the ice"
+      ],
+      "examples": [
+        {
+          "en": "Talking about the weather is an easy way to break the ice.",
+          "es": "Hablar del clima es una forma fácil de romper el hielo."
+        },
+        {
+          "en": "We started with a game to break the ice.",
+          "es": "Empezamos con un juego para romper el hielo."
+        }
+      ],
+      "note": "Existe el sustantivo icebreaker: una actividad para romper el hielo.",
+      "related": [
+        "icebreaker",
+        "warm up"
+      ],
+      "addedAt": "2026-09-14T15:00:00Z"
+    },
+    {
+      "id": "would-you-mind",
+      "kind": "phrase",
+      "head": "Would you mind…?",
+      "say": "Would you mind closing the window?",
+      "tags": [
+        "petición",
+        "cortés"
+      ],
+      "level": "B1",
+      "ipa": "/wʊd jə ˈmaɪnd/",
+      "lat": "uud-iu-MÁIND",
+      "meaning": "¿Te importaría…?",
+      "ex": {
+        "en": "Would you mind closing the window?",
+        "es": "¿Te importaría cerrar la ventana?"
+      },
+      "contexts": [
+        {
+          "title": "Pedir un favor",
+          "text": "Would you mind + verbo -ing."
+        },
+        {
+          "title": "Pedir permiso",
+          "text": "Would you mind if I + pasado."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "Do you mind…?",
+        "Would you mind if I…?"
+      ],
+      "examples": [
+        {
+          "en": "Would you mind if I opened the window?",
+          "es": "¿Te importa si abro la ventana?"
+        },
+        {
+          "en": "Not at all, go ahead.",
+          "es": "Para nada, adelante."
+        }
+      ],
+      "note": "Trampa: responder No o Not at all significa sí, adelante.",
+      "related": [
+        "Could you…?",
+        "Do you mind…?"
+      ],
+      "addedAt": "2026-09-15T15:00:00Z"
+    },
+    {
+      "id": "once-in-a-blue-moon",
+      "kind": "idiom",
+      "head": "once in a blue moon",
+      "say": "once in a blue moon",
+      "tags": [
+        "adverbial",
+        "informal"
+      ],
+      "level": "B2",
+      "ipa": "/wʌns ɪn ə ˌblu ˈmun/",
+      "lat": "uáns-in-a-blu-MÚN",
+      "meaning": "Muy rara vez; de Pascuas a Ramos.",
+      "ex": {
+        "en": "I eat fast food once in a blue moon.",
+        "es": "Como comida rápida muy de vez en cuando."
+      },
+      "contexts": [
+        {
+          "title": "Frecuencia",
+          "text": "algo que casi nunca ocurre."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "every once in a while (≠ algo más frecuente)"
+      ],
+      "examples": [
+        {
+          "en": "He calls me once in a blue moon.",
+          "es": "Me llama muy de vez en cuando."
+        },
+        {
+          "en": "We only go out once in a blue moon.",
+          "es": "Casi nunca salimos."
+        }
+      ],
+      "note": "Va al final de la frase, como otros adverbios de frecuencia largos.",
+      "related": [
+        "rarely",
+        "hardly ever"
+      ],
+      "addedAt": "2026-09-17T15:00:00Z"
+    },
+    {
+      "id": "under-the-weather",
+      "kind": "idiom",
+      "head": "under the weather",
+      "say": "under the weather",
+      "tags": [
+        "adjective phrase"
+      ],
+      "level": "B2",
+      "ipa": "/ˈʌndər ðə ˈwɛðər/",
+      "lat": "ÁN-der-da-UÉ-der",
+      "meaning": "Indispuesto; un poco enfermo.",
+      "ex": {
+        "en": "I’m feeling a bit under the weather today.",
+        "es": "Hoy me siento un poco mal."
+      },
+      "contexts": [
+        {
+          "title": "Salud",
+          "text": "malestar leve, como un resfriado."
+        },
+        {
+          "title": "Excusa cortés",
+          "text": "para faltar sin dar detalles."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "feel under the weather",
+        "look under the weather"
+      ],
+      "examples": [
+        {
+          "en": "She stayed home because she was under the weather.",
+          "es": "Se quedó en casa porque se sentía mal."
+        },
+        {
+          "en": "You look a little under the weather.",
+          "es": "Te ves un poco decaído."
+        }
+      ],
+      "note": "No tiene relación con el clima: se usa solo para personas.",
+      "related": [
+        "sick",
+        "not feeling well"
+      ],
+      "addedAt": "2026-09-18T15:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "dbPath": "data/vocab.db",
+  "dataFolder": "data/seed",
+  "includeSubfolders": false,
+  "seedFromFolderWhenEmpty": true,
+  "pageSize": 12,
+  "maxPageSize": 100,
+  "maxImportBytes": 5242880,
+  "trustProxy": false,
+  "host": "0.0.0.0",
+  "port": 3000,
+  "ai": {
+    "provider": "opencode-go",
+    "model": "deepseek-v4-flash",
+    "promptFile": "prompts/vocab-entry.prompt.md",
+    "timeoutMs": 90000
+  }
+}

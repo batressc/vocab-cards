@@ -1,0 +1,420 @@
+{
+  "$schema": "../../schema/vocab-entries.schema.json",
+  "entries": [
+    {
+      "id": "whoosh",
+      "kind": "onomatopoeia",
+      "head": "whoosh",
+      "say": "whoosh",
+      "tags": [
+        "noun",
+        "verb"
+      ],
+      "level": "B2",
+      "ipa": "/wuʃ/",
+      "lat": "UÚSH",
+      "meaning": "Sonido de algo que pasa muy rápido por el aire; ¡zas!, ¡fiuu!",
+      "ex": {
+        "en": "The train went whoosh past the station.",
+        "es": "El tren pasó ¡fiuu! frente a la estación."
+      },
+      "contexts": [
+        {
+          "title": "Sonido",
+          "text": "viento, un objeto veloz, una puerta automática."
+        },
+        {
+          "title": "Verbo",
+          "text": "moverse a gran velocidad: whooshed past."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "whooshes",
+        "whooshed",
+        "whooshing"
+      ],
+      "examples": [
+        {
+          "en": "A car whooshed by us on the highway.",
+          "es": "Un carro pasó zumbando a nuestro lado en la carretera."
+        },
+        {
+          "en": "The doors opened with a whoosh.",
+          "es": "Las puertas se abrieron con un zumbido."
+        }
+      ],
+      "note": "En inglés las onomatopeyas suelen funcionar también como verbos.",
+      "related": [
+        "swoosh",
+        "zoom"
+      ],
+      "addedAt": "2026-09-19T15:00:00Z"
+    },
+    {
+      "id": "thud",
+      "kind": "onomatopoeia",
+      "head": "thud",
+      "say": "thud",
+      "tags": [
+        "noun",
+        "verb"
+      ],
+      "level": "B2",
+      "ipa": "/θʌd/",
+      "lat": "ZAD",
+      "meaning": "Golpe sordo y pesado; ¡pum!",
+      "ex": {
+        "en": "The book fell to the floor with a thud.",
+        "es": "El libro cayó al suelo con un golpe sordo."
+      },
+      "contexts": [
+        {
+          "title": "Golpe",
+          "text": "algo pesado que cae o choca."
+        },
+        {
+          "title": "Latido",
+          "text": "my heart was thudding: el corazón me latía fuerte."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "thuds",
+        "thudded",
+        "thudding"
+      ],
+      "examples": [
+        {
+          "en": "We heard a thud upstairs.",
+          "es": "Oímos un golpe en el piso de arriba."
+        },
+        {
+          "en": "My heart thudded in my chest.",
+          "es": "El corazón me latía con fuerza."
+        }
+      ],
+      "note": "La th es sorda: lengua entre los dientes, sin vibrar. No suena como t.",
+      "related": [
+        "bang",
+        "thump"
+      ],
+      "addedAt": "2026-09-20T15:00:00Z"
+    },
+    {
+      "id": "buzz",
+      "kind": "onomatopoeia",
+      "head": "buzz",
+      "say": "buzz",
+      "tags": [
+        "noun",
+        "verb"
+      ],
+      "level": "B1",
+      "ipa": "/bʌz/",
+      "lat": "BAS",
+      "meaning": "Zumbido (de abeja, de un teléfono en vibración).",
+      "ex": {
+        "en": "My phone buzzed during the meeting.",
+        "es": "Mi teléfono vibró durante la reunión."
+      },
+      "contexts": [
+        {
+          "title": "Sonido",
+          "text": "abejas, moscas, aparatos eléctricos."
+        },
+        {
+          "title": "Llamar",
+          "text": "give me a buzz: llámame."
+        },
+        {
+          "title": "Emoción",
+          "text": "the buzz around a launch: el revuelo."
+        }
+      ],
+      "formsLabel": "Conjugación",
+      "forms": [
+        "buzzes",
+        "buzzed",
+        "buzzing"
+      ],
+      "examples": [
+        {
+          "en": "A bee buzzed around the flowers.",
+          "es": "Una abeja zumbaba entre las flores."
+        },
+        {
+          "en": "Give me a buzz when you arrive.",
+          "es": "Llámame cuando llegues."
+        }
+      ],
+      "note": "La z final vibra, como el zumbido de una abeja: bzzz.",
+      "related": [
+        "hum",
+        "ring"
+      ],
+      "addedAt": "2026-09-21T15:00:00Z"
+    },
+    {
+      "id": "though",
+      "kind": "word",
+      "head": "though",
+      "say": "though",
+      "tags": [
+        "conjunction",
+        "adverb"
+      ],
+      "level": "B1",
+      "ipa": "/ðoʊ/",
+      "lat": "DÓU",
+      "meaning": "Aunque; sin embargo (al final de la frase).",
+      "ex": {
+        "en": "It’s expensive. I love it, though.",
+        "es": "Es caro. Aun así, me encanta."
+      },
+      "contexts": [
+        {
+          "title": "Al inicio",
+          "text": "Though it was late, we stayed: aunque era tarde."
+        },
+        {
+          "title": "Al final",
+          "text": "contraste informal: sin embargo."
+        },
+        {
+          "title": "even though",
+          "text": "aunque, con más énfasis."
+        }
+      ],
+      "formsLabel": "Variantes",
+      "forms": [
+        "although",
+        "even though"
+      ],
+      "examples": [
+        {
+          "en": "Though tired, she kept working.",
+          "es": "Aunque cansada, siguió trabajando."
+        },
+        {
+          "en": "Even though it rained, we went out.",
+          "es": "Aunque llovió, salimos."
+        }
+      ],
+      "note": "No confundir: though /ðoʊ/, through /θru/, tough /tʌf/, thought /θɔt/.",
+      "related": [
+        "although",
+        "however"
+      ],
+      "addedAt": "2026-09-22T15:00:00Z"
+    },
+    {
+      "id": "used-to",
+      "kind": "grammar",
+      "head": "used to",
+      "say": "used to",
+      "tags": [
+        "hábito pasado"
+      ],
+      "level": "B1",
+      "ipa": "/ˈjustə/",
+      "lat": "IÚS-tu",
+      "meaning": "Solía; acostumbraba (algo que ya no pasa).",
+      "ex": {
+        "en": "I used to play soccer every day.",
+        "es": "Solía jugar fútbol todos los días."
+      },
+      "contexts": [
+        {
+          "title": "used to + verbo",
+          "text": "hábito o estado del pasado."
+        },
+        {
+          "title": "be used to + -ing",
+          "text": "estar acostumbrado."
+        },
+        {
+          "title": "get used to + -ing",
+          "text": "acostumbrarse."
+        }
+      ],
+      "formsLabel": "Formas",
+      "forms": [
+        "didn’t use to",
+        "Did you use to…?",
+        "be used to",
+        "get used to"
+      ],
+      "examples": [
+        {
+          "en": "Did you use to live here?",
+          "es": "¿Vivías aquí antes?"
+        },
+        {
+          "en": "I’m used to working at night.",
+          "es": "Estoy acostumbrado a trabajar de noche."
+        }
+      ],
+      "note": "En negativa y pregunta se pierde la d: didn’t use to. Se pronuncia igual.",
+      "related": [
+        "would (hábito)",
+        "anymore"
+      ],
+      "addedAt": "2026-09-23T09:00:00Z"
+    },
+    {
+      "id": "whose",
+      "kind": "word",
+      "head": "whose",
+      "say": "whose",
+      "tags": [
+        "pronoun",
+        "relativo"
+      ],
+      "level": "B1",
+      "ipa": "/huz/",
+      "lat": "JÚS",
+      "meaning": "¿De quién?; cuyo.",
+      "ex": {
+        "en": "Whose jacket is this?",
+        "es": "¿De quién es esta chaqueta?"
+      },
+      "contexts": [
+        {
+          "title": "Pregunta",
+          "text": "preguntar por el dueño."
+        },
+        {
+          "title": "Relativo",
+          "text": "the man whose car was stolen: el hombre cuyo carro robaron."
+        }
+      ],
+      "formsLabel": "Familia",
+      "forms": [
+        "who",
+        "whom",
+        "who’s (≠ who is)"
+      ],
+      "examples": [
+        {
+          "en": "Whose turn is it?",
+          "es": "¿A quién le toca?"
+        },
+        {
+          "en": "That’s the developer whose code we reviewed.",
+          "es": "Ese es el desarrollador cuyo código revisamos."
+        }
+      ],
+      "note": "Whose y who’s suenan igual. Who’s = who is o who has.",
+      "related": [
+        "who",
+        "which"
+      ],
+      "addedAt": "2026-09-23T15:00:00Z"
+    },
+    {
+      "id": "embarrassed",
+      "kind": "word",
+      "head": "embarrassed",
+      "say": "embarrassed",
+      "tags": [
+        "adjective",
+        "falso amigo"
+      ],
+      "level": "B1",
+      "ipa": "/ɪmˈbærəst/",
+      "lat": "im-BÉ-rast",
+      "meaning": "Avergonzado; apenado.",
+      "ex": {
+        "en": "I was so embarrassed when I fell.",
+        "es": "Me dio muchísima vergüenza cuando me caí."
+      },
+      "contexts": [
+        {
+          "title": "Vergüenza",
+          "text": "sentirse apenado por una situación."
+        },
+        {
+          "title": "Causa",
+          "text": "embarrassing: algo que da vergüenza."
+        }
+      ],
+      "formsLabel": "Familia",
+      "forms": [
+        "embarrass (verbo)",
+        "embarrassing",
+        "embarrassment"
+      ],
+      "examples": [
+        {
+          "en": "Don’t be embarrassed, it happens to everyone.",
+          "es": "No te apenes, le pasa a todos."
+        },
+        {
+          "en": "That was an embarrassing mistake.",
+          "es": "Fue un error vergonzoso."
+        }
+      ],
+      "note": "Falso amigo: embarazada se dice pregnant. Se escribe con doble r y doble s.",
+      "related": [
+        "ashamed",
+        "pregnant (≠)"
+      ],
+      "addedAt": "2026-09-24T09:00:00Z"
+    },
+    {
+      "id": "i-wish",
+      "kind": "grammar",
+      "head": "I wish",
+      "say": "I wish",
+      "tags": [
+        "deseo",
+        "condicional"
+      ],
+      "level": "B2",
+      "ipa": "/aɪ ˈwɪʃ/",
+      "lat": "ai-UÍSH",
+      "meaning": "Ojalá; me gustaría que…",
+      "ex": {
+        "en": "I wish I had more time.",
+        "es": "Ojalá tuviera más tiempo."
+      },
+      "contexts": [
+        {
+          "title": "Presente irreal",
+          "text": "I wish + pasado: I wish I knew."
+        },
+        {
+          "title": "Arrepentimiento",
+          "text": "I wish + had + participio: I wish I had studied."
+        },
+        {
+          "title": "Queja",
+          "text": "I wish + would: I wish you would listen."
+        }
+      ],
+      "formsLabel": "Formas",
+      "forms": [
+        "I wish I were…",
+        "I wish I had…",
+        "I wish you would…"
+      ],
+      "examples": [
+        {
+          "en": "I wish I had studied more.",
+          "es": "Ojalá hubiera estudiado más."
+        },
+        {
+          "en": "I wish it would stop raining.",
+          "es": "Ojalá dejara de llover."
+        }
+      ],
+      "note": "En estilo cuidado se usa were con todas las personas: I wish I were taller.",
+      "related": [
+        "if only",
+        "hope (≠ algo posible)"
+      ],
+      "addedAt": "2026-09-24T15:00:00Z"
+    }
+  ]
+}

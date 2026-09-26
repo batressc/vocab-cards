@@ -1,0 +1,7 @@
+# Finales de línea LF en el repositorio (evita diferencias falsas entre Windows y Linux)
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.db binary
+*.png binary
+*.jpg binary
+*.ico binary

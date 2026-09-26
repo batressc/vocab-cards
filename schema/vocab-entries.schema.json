@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Archivo de tarjetas de inglés",
+  "description": "Un arreglo de entradas, o un objeto con la propiedad entries.",
+  "oneOf": [
+    { "type": "array", "items": { "$ref": "#/$defs/entry" } },
+    {
+      "type": "object",
+      "required": ["entries"],
+      "properties": {
+        "$schema": { "type": "string" },
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } }
+      }
+    }
+  ],
+  "$defs": {
+    "pair": {
+      "type": "object",
+      "required": ["en", "es"],
+      "properties": {
+        "en": { "type": "string", "description": "Texto en inglés" },
+        "es": { "type": "string", "description": "Traducción al español" }
+      },
+      "additionalProperties": false
+    },
+    "entry": {
+      "type": "object",
+      "required": ["head", "meaning"],
+      "properties": {
+        "id": { "type": "string", "description": "Único y estable. Si falta, se genera a partir de head." },
+        "kind": {
+          "type": "string",
+          "description": "Tipo principal; define color y filtro.",
+          "enum": ["phrasal", "idiom", "phrase", "onomatopoeia", "word", "grammar"]
+        },
+        "head": { "type": "string", "description": "Palabra o frase tal como se muestra." },
+        "say": { "type": "string", "description": "Texto que lee la voz. Por defecto, head." },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "level": { "type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"] },
+        "ipa": { "type": "string", "description": "Pronunciación americana en IPA, p. ej. /ɡɪv ˈʌp/" },
+        "lat": { "type": "string", "description": "Pronunciación latina: sílabas separadas por guion, la tónica en MAYÚSCULAS." },
+        "meaning": { "type": "string" },
+        "ex": { "$ref": "#/$defs/pair", "description": "Ejemplo del frente de la tarjeta." },
+        "contexts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "text"],
+            "properties": { "title": { "type": "string" }, "text": { "type": "string" } },
+            "additionalProperties": false
+          }
+        },
+        "formsLabel": { "type": "string", "description": "Conjugación, Variantes, Familia, Formas…" },
+        "forms": { "type": "array", "items": { "type": "string" } },
+        "examples": { "type": "array", "items": { "$ref": "#/$defs/pair" } },
+        "note": { "type": "string" },
+        "related": { "type": "array", "items": { "type": "string" } },
+        "addedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Fecha de adición (ISO 8601). Si falta, se usa la fecha de modificación del archivo."
+        }
+      }
+    }
+  }
+}

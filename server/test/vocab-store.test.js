@@ -1,0 +1,79 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { tempStore, entry, source } from './helpers.js';
+
+test('plan no guarda nada; apply guarda y registra la importación', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const plan = store.plan([source([entry('give up'), entry('run into')])], 'update');
+  assert.equal(plan.summary.new, 2);
+  assert.equal(store.size, 0);
+  const applied = store.apply([source([entry('give up'), entry('run into')])], 'update', 'texto');
+  assert.equal(store.size, 2);
+  assert.equal(store.history()[0].inserted, 2);
+  assert.ok(applied.importId > 0);
+});
+
+test('detecta sin cambios, actualizaciones, omisiones y duplicados', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('give up')])], 'update', 'texto');
+  assert.equal(store.plan([source([entry('give up')])], 'update').summary.same, 1);
+  const changed = [entry('give up', { meaning: 'Otro significado' })];
+  assert.equal(store.plan([source(changed)], 'update').summary.update, 1);
+  assert.equal(store.plan([source(changed)], 'keep').summary.skip, 1);
+  const dup = store.plan([source([entry('x'), entry('x', { meaning: 'segunda' })])], 'update');
+  assert.equal(dup.summary.duplicate, 1);
+  assert.equal(dup.summary.new, 1);
+});
+
+test('reemplazar conserva la fecha de adición original', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('give up', { addedAt: '2026-01-01T00:00:00Z' })])], 'update', 'texto');
+  store.apply([source([entry('give up', { meaning: 'nuevo' })])], 'update', 'texto');
+  const item = store.query({ q: 'give up' }).items[0];
+  assert.equal(item.meaning, 'nuevo');
+  assert.equal(item.addedAt, '2026-01-01T00:00:00.000Z');
+});
+
+test('una transacción fallida no deja cambios a medias', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('a')])], 'update', 'texto');
+  const before = store.size;
+  assert.throws(() => store.apply([source([entry('b')])], 'update', null));   // origin NOT NULL → falla el registro
+  assert.equal(store.size, before);
+});
+
+test('query filtra, ordena y pagina; findExact ignora mayúsculas y signos', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([
+    entry('beta', { level: 'B1', addedAt: '2026-01-02T00:00:00Z' }),
+    entry('alpha', { level: 'A2', addedAt: '2026-01-03T00:00:00Z' }),
+    entry('How’s it going?', { kind: 'phrase', level: 'A2', addedAt: '2026-01-01T00:00:00Z' })
+  ])], 'update', 'texto');
+
+  assert.deepEqual(store.query({ sort: 'added', dir: 'desc' }).items.map(e => e.head), ['alpha', 'beta', 'How’s it going?']);
+  assert.deepEqual(store.query({ sort: 'alpha', dir: 'asc' }).items.map(e => e.head), ['alpha', 'beta', 'How’s it going?']);
+  assert.equal(store.query({ levels: ['B1'] }).total, 1);
+  assert.equal(store.query({ kinds: [] }).total, 0);
+
+  const page = store.query({ take: 2 });
+  assert.equal(page.items.length, 2);
+  assert.equal(page.hasMore, true);
+
+  const a = store.query({ sort: 'random', seed: 7 }).items.map(e => e.id);
+  const b = store.query({ sort: 'random', seed: 7 }).items.map(e => e.id);
+  assert.deepEqual(a, b, 'el orden aleatorio es estable para la misma semilla');
+
+  assert.equal(store.query({ q: "how's it going" }).exact?.id, 'hows-it-going');
+  assert.equal(store.query({ q: 'alp' }).exact, null);
+});
+
+test('eliminar y exportar', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('a'), entry('b')])], 'update', 'texto');
+  assert.equal(store.remove('a'), true);
+  assert.equal(store.remove('no-existe'), false);
+  const exp = store.exportAll();
+  assert.deepEqual(exp.entries.map(e => e.id), ['b']);
+  assert.ok(exp.entries[0].addedAt);
+  assert.equal(exp.entries[0].source, undefined);
+});
