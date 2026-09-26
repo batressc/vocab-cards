@@ -72,8 +72,8 @@ secretos van en `.env`, que Git ignora.
 | `maxImportBytes` | 5 MB | Tamaño máximo por archivo o texto importado. |
 | `trustProxy` | `false` | Pon `1` detrás de Nginx o IIS. |
 | `host` / `port` | `0.0.0.0` / `3000` | Dónde escucha el servidor. |
-| `ai.provider` | `opencode-go` | `opencode-go`, `gemini`, `openai`, `anthropic`, `azure`, `ollama` o `custom`. |
-| `ai.model` | según proveedor | Modelo de fallback y predeterminado inicial. |
+| `ai.provider` | `opencode-go` | Proveedor heredado; la selección operativa se administra globalmente desde la interfaz. |
+| `ai.model` | según proveedor | Modelo heredado; no reemplaza el predeterminado global persistido. |
 | `ai.providers` | `{}` | Opciones por proveedor y configuración explícita de custom u Ollama. |
 | `ai.baseUrl` | según proveedor | Obligatorio para `custom`. |
 | `ai.promptFile` | `prompts/vocab-entry.prompt.md` | Prompt de sistema. |
@@ -96,8 +96,8 @@ y Gemini: no los agregues manualmente a `ai.providers`. Si una clave no existe,
 ese proveedor no aparece aunque quede una entrada antigua en `config.json`.
 `ai.providers` NO contiene listas de modelos: sirve para sobrescribir opciones
 no secretas y para configurar explícitamente los proveedores que no pueden
-activarse solo con una clave. El servidor obtiene los IDs autorizados desde el
-catálogo oficial de cada proveedor.
+activarse solo con una clave. El servidor obtiene los IDs publicados desde el
+catálogo de cada proveedor, sin asumir que la credencial pueda invocarlos.
 
 ```json
 {
@@ -132,17 +132,29 @@ proveedores configurables, no reemplazan la clave ni el endpoint de Azure. Usa
 El catálogo se guarda cinco minutos en memoria y deduplica actualizaciones
 concurrentes. Si una actualización falla después de un éxito, se conserva el
 último snapshot marcado como desactualizado; sin un snapshot previo se omite
-solo ese proveedor. Las rutas públicas exponen IDs, etiquetas, frescura y
+solo ese proveedor. Las rutas públicas exponen únicamente los modelos que el
+administrador marcó como visibles, con IDs, etiquetas, categoría, frescura y
 errores sanitizados, nunca claves, endpoints ni URLs internas. **Actualizar modelos** en
 Administración fuerza una consulta nueva con la autenticación administrativa.
 
-En **Agregar tarjetas → Modelo predeterminado**, Administración permite elegir
-el modelo inicial del navegador. La estrella resalta el actual y el valor se
-guarda en `localStorage` con la clave `vocab-ai-default-model`. Al abrir **Crear
-con IA**, el selector parte de ese predeterminado, pero cualquier alternativa
-elegida allí solo dura mientras el cuadro permanece abierto. Si el valor
-guardado quedó obsoleto o corrupto, se usa `ai.provider` + `ai.model` si ese par
-aparece en el snapshot oficial; en otro caso se usa el primer modelo descubierto.
+En **Administración → Configuración de IA** hay dos secciones. **Modelo
+predeterminado** contiene solo modelos visibles y permite elegir el único valor
+global. **Catálogo completo** contiene todos los modelos descubiertos y permite
+controlar su visibilidad y categoría: **Sin clasificar**, **Eficiente** (menor
+costo y tareas simples), **Equilibrado** o **Avanzado** (mayor capacidad y
+costo). Estos ajustes se guardan en SQLite y se comparten con todos los
+navegadores; visibilidad significa curación administrativa, no garantiza que la
+cuenta del proveedor pueda invocar el modelo.
+
+Los modelos nuevos son visibles y quedan **Sin clasificar** hasta que se guarde
+otra decisión. Si un modelo desaparece del catálogo, sus preferencias se
+conservan para cuando regrese. Si desaparece o se oculta el predeterminado, el
+servidor usa de forma determinista el primer modelo visible sin sobrescribir el
+valor guardado. Es válido ocultarlos todos: no habrá predeterminado y la creación
+con IA quedará deshabilitada. Al abrir **Crear con IA**, el selector parte del
+predeterminado global; cualquier alternativa elegida allí solo dura mientras el
+cuadro permanece abierto. La antigua clave local
+`vocab-ai-default-model` se elimina y ya no es una fuente de configuración.
 
 ### Sesiones de OpenCode Go
 

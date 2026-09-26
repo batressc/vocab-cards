@@ -28,6 +28,24 @@ const MIGRATIONS = [
     skipped     INTEGER NOT NULL DEFAULT 0,
     errors      INTEGER NOT NULL DEFAULT 0
   );
+  `,
+  `
+  CREATE TABLE ai_model_preferences (
+    provider    TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    visible     INTEGER NOT NULL CHECK (visible IN (0, 1)),
+    category    TEXT NOT NULL CHECK (category IN ('unclassified', 'efficient', 'balanced', 'advanced')),
+    PRIMARY KEY (provider, model)
+  );
+
+  CREATE TABLE ai_settings (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    default_provider  TEXT,
+    default_model     TEXT,
+    CHECK ((default_provider IS NULL) = (default_model IS NULL))
+  );
+
+  INSERT INTO ai_settings (id, default_provider, default_model) VALUES (1, NULL, NULL);
   `
 ];
 
@@ -64,7 +82,13 @@ export function openDatabase(path) {
     remove:     db.prepare('DELETE FROM entries WHERE id = ?'),
     logImport:  db.prepare(`INSERT INTO imports (created_at, origin, sources, mode, inserted, updated, unchanged, skipped, errors)
                             VALUES (@createdAt, @origin, @sources, @mode, @inserted, @updated, @unchanged, @skipped, @errors)`),
-    history:    db.prepare('SELECT * FROM imports ORDER BY id DESC LIMIT ?')
+    history:    db.prepare('SELECT * FROM imports ORDER BY id DESC LIMIT ?'),
+    aiPreferences: db.prepare('SELECT provider, model, visible, category FROM ai_model_preferences'),
+    aiDefault: db.prepare('SELECT default_provider, default_model FROM ai_settings WHERE id = 1'),
+    upsertAiPreference: db.prepare(`INSERT INTO ai_model_preferences (provider, model, visible, category)
+                                    VALUES (@provider, @model, @visible, @category)
+                                    ON CONFLICT(provider, model) DO UPDATE SET visible = excluded.visible, category = excluded.category`),
+    updateAiDefault: db.prepare('UPDATE ai_settings SET default_provider = @provider, default_model = @model WHERE id = 1')
   };
 
   return { db, sql, transaction, close: () => db.close() };

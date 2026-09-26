@@ -18,7 +18,9 @@ export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 /** Clave de administración guardada en este navegador. */
 export const ADMIN_TOKEN_KEY = 'vocab-admin-token';
 export const OPENCODE_SESSION_LIMIT_KEY = 'vocab-opencode-session-limit';
-export const AI_DEFAULT_MODEL_KEY = 'vocab-ai-default-model';
+export const AI_CATEGORY_LABELS = Object.freeze({
+  unclassified:'Sin clasificar', efficient:'Eficiente', balanced:'Equilibrado', advanced:'Avanzado'
+});
 
 /** Busca un par proveedor/modelo dentro del catálogo público vigente. */
 export function findAiModel(info, value){
@@ -31,10 +33,10 @@ export function findAiModel(info, value){
   return null;
 }
 
-/** Resuelve el predeterminado guardado, descartando valores corruptos u obsoletos. */
+/** Usa exclusivamente el predeterminado global publicado por el servidor. */
 export function resolveAiDefaultModel(info){
-  const saved = findAiModel(info, store.get(AI_DEFAULT_MODEL_KEY, null));
-  const fallback = saved || findAiModel(info, info?.default);
+  try { localStorage.removeItem('vocab-ai-default-model'); } catch { /* migración desde la preferencia local anterior */ }
+  const fallback = findAiModel(info, info?.default);
   if (fallback) return { provider: fallback.provider.id, model: fallback.model.id };
   const provider = (Array.isArray(info?.providers) ? info.providers : []).find(item => Array.isArray(item?.models) && item.models.length);
   return provider ? { provider: provider.id, model: provider.models[0].id } : null;

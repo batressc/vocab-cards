@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAiModelCatalog } from '../ai-models.js';
 import { resolveAi, publicAiInfo, generateEntries, createOpenCodeSessionAllocator, OPENCODE_USER_AGENT } from '../ai.js';
+import { tempStore } from './helpers.js';
 
 const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'OPENCODE_API_KEY'];
 
@@ -310,6 +311,45 @@ test('publicAiInfo es async y resolveAi valida contra el snapshot descubierto', 
   assert.equal((await resolveAi(cfg, { provider: 'custom', model: 'allowed' }, { catalog })).enabled, true);
   const rejected = await resolveAi(cfg, { provider: 'custom', model: 'injected' }, { catalog });
   assert.equal(rejected.status, 400);
+});
+
+test('la proyección pública excluye ocultos, la administrativa los conserva y generación los rechaza', async t => {
+  isolateKeyEnv(t, { AI_API_KEY:'key' });
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const snapshot = modelSnapshot('custom', [
+    { id:'visible', label:'Visible', protocol:'chat', supportsTemperature:true },
+    { id:'hidden', label:'Hidden', protocol:'chat', supportsTemperature:true }
+  ]);
+  store.saveAiCuration(snapshot, {
+    models:[
+      { provider:'custom', model:'visible', visible:true, category:'balanced' },
+      { provider:'custom', model:'hidden', visible:false, category:'advanced' }
+    ],
+    default:{ provider:'custom', model:'visible' }
+  });
+  const options = { store, catalog:{ get:async () => snapshot } };
+  const publicInfo = await publicAiInfo({ ai:{} }, options);
+  const adminInfo = await publicAiInfo({ ai:{} }, { ...options, admin:true });
+  assert.deepEqual(publicInfo.providers[0].models.map(model => model.id), ['visible']);
+  assert.equal(publicInfo.providers[0].models[0].category, 'balanced');
+  assert.equal(publicInfo.allProviders, undefined);
+  assert.deepEqual(adminInfo.allProviders[0].models.map(model => model.id), ['visible', 'hidden']);
+  const hidden = await resolveAi({ ai:{ providers:{ custom:{ baseUrl:'https://example.test/v1' } } } }, { provider:'custom', model:'hidden' }, options);
+  assert.equal(hidden.enabled, false);
+  assert.equal(hidden.status, 400);
+});
+
+test('sin modelos visibles la IA pública queda deshabilitada y sin predeterminado', async t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const snapshot = modelSnapshot('custom', [{ id:'only', label:'Only', protocol:'chat' }]);
+  store.saveAiCuration(snapshot, {
+    models:[{ provider:'custom', model:'only', visible:false, category:'unclassified' }],
+    default:null
+  });
+  const info = await publicAiInfo({ ai:{} }, { store, catalog:{ get:async () => snapshot } });
+  assert.equal(info.enabled, false);
+  assert.equal(info.default, null);
+  assert.deepEqual(info.providers, []);
 });
 
 test('genera por chat, Messages y Responses con autenticación separada del protocolo', async t => {

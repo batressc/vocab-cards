@@ -12,27 +12,30 @@ class AiError extends Error {
 
 export async function publicAiInfo(cfg, options = {}) {
   const snapshot = await (options.catalog || aiModelCatalog).get(cfg, { force: options.force });
-  if (!snapshot.default) {
+  const curated = options.store ? options.store.projectAiCatalog(snapshot, { admin: options.admin }) : snapshot;
+  if (!curated.default) {
     return {
       enabled: false,
-      reason: 'No se pudo descubrir ningún modelo de los proveedores configurados.',
-      ...snapshot
+      reason: 'No hay modelos visibles para crear tarjetas con IA.',
+      ...curated
     };
   }
-  const selected = findCatalogModel(snapshot, snapshot.default);
+  const selected = findCatalogModel(curated, curated.default);
   return {
     enabled: true,
     provider: selected.provider.id,
     label: selected.provider.label,
     model: selected.model.id,
-    ...snapshot
+    ...curated
   };
 }
 
 export async function resolveAi(cfg, selection, options = {}) {
   const snapshot = await (options.catalog || aiModelCatalog).get(cfg);
-  const requested = selection?.provider || selection?.model ? selection : snapshot.default;
-  const selected = findCatalogModel(snapshot, requested);
+  const curated = options.store ? options.store.projectAiCatalog(snapshot) : snapshot;
+  const requested = selection?.provider || selection?.model ? selection : curated.default;
+  const allowed = findCatalogModel(curated, requested);
+  const selected = allowed && findCatalogModel(snapshot, requested);
   if (!selected) return { enabled: false, status: 400, reason: 'El modelo de IA seleccionado ya no está disponible. Actualiza el catálogo y elige otro modelo.' };
   const provider = resolveProvider(cfg, selected.provider.id);
   if (!provider.enabled) return provider;

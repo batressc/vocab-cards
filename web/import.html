@@ -46,8 +46,8 @@
       <section class="panel ai-admin-panel" id="aiDefaultPanel" aria-labelledby="aiDefaultTitle">
         <div class="model-catalog-head">
           <div>
-            <h2 id="aiDefaultTitle">Proveedores y modelos</h2>
-            <p class="section-intro">Elige el modelo predeterminado y ajusta cada proveedor configurado.</p>
+            <h2 id="aiDefaultTitle">Modelo predeterminado</h2>
+            <p class="section-intro">Elige entre los modelos visibles. Este valor se comparte con todos los navegadores.</p>
           </div>
           <button class="btn" id="aiModelsRefresh" type="button">Actualizar modelos</button>
         </div>
@@ -58,7 +58,18 @@
           <div class="provider-list" id="aiDefaultModels"></div>
           <div class="model-save">
             <button class="btn primary" id="aiDefaultSave" type="submit">Guardar modelo predeterminado</button>
-            <p class="hint" id="aiDefaultHint">Se guarda solo en este navegador. En el cuadro de creación puedes elegir temporalmente otro modelo.</p>
+            <p class="hint" id="aiDefaultHint">En el cuadro de creación puedes elegir temporalmente otro modelo visible.</p>
+          </div>
+        </form>
+      </section>
+      <section class="panel ai-admin-panel" id="aiCatalogPanel" aria-labelledby="aiCatalogTitle">
+        <h2 id="aiCatalogTitle">Catálogo completo</h2>
+        <p class="section-intro">Decide qué modelos aparecen para crear tarjetas y clasifícalos según su uso recomendado.</p>
+        <form id="aiCatalogForm">
+          <div class="provider-list" id="aiCatalogModels"></div>
+          <div class="model-save">
+            <button class="btn primary" id="aiCatalogSave" type="submit">Guardar catálogo</button>
+            <p class="hint" id="aiCatalogHint" aria-live="polite">Los cambios no se comparten hasta que los guardes.</p>
           </div>
         </form>
       </section>

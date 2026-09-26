@@ -3,7 +3,7 @@
 
 import {
   $, esc, store, fmtDateTime, plural, toast, findAiModel, resolveAiDefaultModel,
-  ADMIN_TOKEN_KEY, OPENCODE_SESSION_LIMIT_KEY, AI_DEFAULT_MODEL_KEY
+  ADMIN_TOKEN_KEY, OPENCODE_SESSION_LIMIT_KEY, AI_CATEGORY_LABELS
 } from '../../shared/utils.js';
 
 const fmtSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
@@ -27,7 +27,8 @@ const state = {
   files: [],                // [{ file, text?, error? }]
   review: null,             // último resultado de revisión
   reviewKey: null,          // firma del contenido revisado
-  busy: false
+  busy: false,
+  aiDraft: new Map()
 };
 
 /* ================= API ================= */
@@ -66,11 +67,32 @@ function showSession(){
   $('#sessionText').textContent = `Sesión de administración activa. ${plural(state.info.total, 'tarjeta guardada', 'tarjetas guardadas')}.`;
   $('#folderName').textContent = state.info.dataFolder;
   $('#limitHint').textContent = `Hasta ${fmtSize(state.info.maxImportBytes)} por archivo.`;
+  resetAiDraft();
   renderAiDefaultSettings();
   selectAdminTab(state.adminTab);
 }
 
 const MODEL_STAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>';
+const CARET = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const modelKey = (provider, model) => `${provider}\u0000${model}`;
+
+function resetAiDraft(){
+  state.aiDraft = new Map((state.info.ai?.allProviders || []).flatMap(provider => provider.models.map(model => [
+    modelKey(provider.id, model.id), { provider:provider.id, model:model.id, visible:model.visible, category:model.category }
+  ])));
+}
+
+function accordion(provider, content, prefix, expanded = true){
+  const id = `${prefix}-${provider.id.replace(/[^a-z0-9_-]/gi, '-')}`;
+  return `<section class="provider-card">
+    <h3><button type="button" class="provider-toggle" aria-expanded="${expanded}" aria-controls="${esc(id)}">
+      <span>${esc(provider.label)}</span>${CARET}
+    </button></h3>
+    <div class="provider-content" id="${esc(id)}"${expanded ? '' : ' hidden'}>${content}</div>
+  </section>`;
+}
+
+const categoryBadge = category => `<span class="model-category category-${esc(category)}">${esc(AI_CATEGORY_LABELS[category] || AI_CATEGORY_LABELS.unclassified)}</span>`;
 
 function renderAiDefaultSettings(){
   const panel = $('#aiDefaultPanel');
@@ -86,30 +108,43 @@ function renderAiDefaultSettings(){
   $('#aiCatalogStatus').classList.toggle('stale', Boolean(info.stale));
   $('#aiCatalogErrors').innerHTML = (info.errors || []).map(error => `<p>${esc(error.message)}</p>`).join('');
   $('#aiDefaultCurrent').textContent = current
-    ? `Actual en este navegador: ${current.provider.label} · ${current.model.label}`
+    ? `Predeterminado global: ${current.provider.label} · ${current.model.label}`
     : 'No hay un modelo predeterminado disponible.';
-  $('#aiDefaultModels').innerHTML = providers.length ? providers.map(provider => `
-    <section class="provider-card" aria-labelledby="provider-${esc(provider.id)}">
-      <div class="provider-head">
-        <h3 id="provider-${esc(provider.id)}">${esc(provider.label)}</h3>
-        <span class="provider-state">Configurado</span>
-      </div>
+  if (info.defaultFallback) $('#aiDefaultCurrent').textContent += ' El valor guardado no está disponible; se usa este modelo como alternativa sin modificarlo.';
+  $('#aiDefaultModels').innerHTML = providers.length ? providers.map((provider, index) => accordion(provider, `
       <fieldset class="model-default-group">
-        <legend>Modelos disponibles</legend>
+        <legend class="sr-only">Modelos visibles de ${esc(provider.label)}</legend>
         ${provider.models.map(model => {
         const active = provider.id === preferred?.provider && model.id === preferred?.model;
         return `<label class="model-default-option">
           <input type="radio" name="default-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${active ? ' checked' : ''}>
-          <span>${esc(model.label)}${model.group ? `<small>${esc(model.group)}</small>` : ''}</span>
+          <span><b>${esc(model.label)}</b><small>${esc(provider.label)}${model.group ? ` · ${esc(model.group)}` : ''}</small></span>
+          ${categoryBadge(model.category)}
           <span class="model-default-star${active ? ' active' : ''}" title="${active ? 'Predeterminado actual' : 'No es el predeterminado'}">${MODEL_STAR}<span class="sr-only">${active ? 'Predeterminado actual' : ''}</span></span>
         </label>`;
         }).join('') || '<p class="model-empty">Este proveedor no devolvió modelos utilizables.</p>'}
         ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
       </fieldset>
       ${providerSettings(provider.id)}
-    </section>`).join('') : '<p class="model-empty">No hay modelos disponibles. Revisa los proveedores configurados, sus claves y los errores del catálogo.</p>';
+    `, 'default-provider', provider.id === preferred?.provider || (!preferred && index === 0))).join('') : '<p class="model-empty">No hay modelos visibles. Activa al menos uno en Catálogo completo para habilitar la creación con IA.</p>';
   $('#aiDefaultSave').disabled = !preferred;
+  renderFullCatalog();
   renderAiSettings();
+}
+
+function renderFullCatalog(){
+  const providers = state.info.ai?.allProviders || [];
+  $('#aiCatalogModels').innerHTML = providers.length ? providers.map((provider, index) => accordion(provider, `
+    <div class="catalog-models">${provider.models.map(model => {
+      const draft = state.aiDraft.get(modelKey(provider.id, model.id)) || model;
+      return `<div class="catalog-model-row">
+        <label class="catalog-visible"><input type="checkbox" data-curation-visible data-provider="${esc(provider.id)}" value="${esc(model.id)}"${draft.visible ? ' checked' : ''}> <span><b>${esc(model.label)}</b><small>${esc(provider.label)}${model.group ? ` · ${esc(model.group)}` : ''}</small></span></label>
+        <label class="catalog-category"><span class="sr-only">Categoría de ${esc(model.label)}</span><select data-curation-category data-provider="${esc(provider.id)}" data-model="${esc(model.id)}">${Object.entries(AI_CATEGORY_LABELS).map(([value, label]) => `<option value="${value}"${draft.category === value ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
+      </div>`;
+    }).join('')}</div>
+    ${provider.stale ? '<p class="provider-stale">Se muestra el último catálogo disponible.</p>' : ''}
+  `, 'catalog-provider', index === 0)).join('') : '<p class="model-empty">No se descubrieron modelos. Actualiza el catálogo o revisa la configuración de proveedores.</p>';
+  $('#aiCatalogSave').disabled = !providers.length;
 }
 
 function providerSettings(providerId){
@@ -134,6 +169,7 @@ $('#aiModelsRefresh').addEventListener('click', async () => {
   $('#aiCatalogStatus').textContent = 'Consultando los catálogos oficiales…';
   try {
     state.info.ai = await adminApi('ai/models/refresh', { method: 'POST', body: '{}' });
+    resetAiDraft();
     renderAiDefaultSettings();
     toast(state.info.ai.stale ? 'Catálogo actualizado parcialmente.' : 'Catálogo de modelos actualizado.');
   } catch (err) {
@@ -144,7 +180,24 @@ $('#aiModelsRefresh').addEventListener('click', async () => {
   }
 });
 
-$('#aiDefaultForm').addEventListener('submit', e => {
+function curationPayload(defaultModel, draft = true){
+  const models = draft
+    ? [...state.aiDraft.values()]
+    : (state.info.ai?.allProviders || []).flatMap(provider => provider.models.map(model => ({
+      provider:provider.id, model:model.id, visible:model.visible, category:model.category
+    })));
+  return { models, default:defaultModel };
+}
+
+async function saveCuration(defaultModel, hint, draft = true){
+  const result = await adminApi('ai/curation', { method:'PUT', body:JSON.stringify(curationPayload(defaultModel, draft)) });
+  state.info.ai = result;
+  resetAiDraft();
+  renderAiDefaultSettings();
+  $(hint).textContent = 'Configuración global guardada en el servidor.';
+}
+
+$('#aiDefaultForm').addEventListener('submit', async e => {
   e.preventDefault();
   const input = document.querySelector('input[name="default-model"]:checked');
   const next = input && { provider: input.dataset.provider, model: input.value };
@@ -152,15 +205,42 @@ $('#aiDefaultForm').addEventListener('submit', e => {
     $('#aiDefaultHint').textContent = 'Selecciona un modelo disponible antes de guardar.';
     return;
   }
-  if (!store.set(AI_DEFAULT_MODEL_KEY, next)) {
-    $('#aiDefaultHint').textContent = 'El navegador denegó el almacenamiento. Revisa sus permisos e inténtalo de nuevo.';
-    toast('No se pudo guardar el modelo predeterminado en este navegador.');
-    return;
-  }
-  renderAiDefaultSettings();
-  $('#aiDefaultHint').textContent = 'Predeterminado guardado en este navegador. Las selecciones del cuadro de creación siguen siendo temporales.';
-  document.querySelector('input[name="default-model"]:checked')?.focus();
-  toast('Modelo predeterminado guardado.');
+  try {
+    await saveCuration(next, '#aiDefaultHint', false);
+    document.querySelector('input[name="default-model"]:checked')?.focus();
+    toast('Modelo predeterminado global guardado.');
+  } catch (err) { $('#aiDefaultHint').textContent = err.message; }
+});
+
+$('#aiCatalogForm').addEventListener('change', e => {
+  const visible = e.target.closest('[data-curation-visible]');
+  const category = e.target.closest('[data-curation-category]');
+  const provider = (visible || category)?.dataset.provider;
+  const model = visible?.value || category?.dataset.model;
+  const draft = state.aiDraft.get(modelKey(provider, model));
+  if (!draft) return;
+  if (visible) draft.visible = visible.checked;
+  if (category) draft.category = category.value;
+  $('#aiCatalogHint').textContent = 'Hay cambios sin guardar. La vista principal se actualizará al guardar.';
+});
+
+$('#aiCatalogForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const visible = [...state.aiDraft.values()].filter(model => model.visible);
+  let preferred = resolveAiDefaultModel(state.info.ai);
+  if (!visible.some(model => model.provider === preferred?.provider && model.model === preferred?.model)) preferred = visible[0] ? { provider:visible[0].provider, model:visible[0].model } : null;
+  try {
+    await saveCuration(preferred, '#aiCatalogHint');
+    toast(visible.length ? 'Catálogo global guardado.' : 'Catálogo guardado; la creación con IA quedó deshabilitada.');
+  } catch (err) { $('#aiCatalogHint').textContent = err.message; }
+});
+
+document.querySelector('#admin-pane-ai').addEventListener('click', e => {
+  const button = e.target.closest('.provider-toggle');
+  if (!button) return;
+  const content = document.getElementById(button.getAttribute('aria-controls'));
+  content.hidden = !content.hidden;
+  button.setAttribute('aria-expanded', String(!content.hidden));
 });
 
 function renderAiSettings(){

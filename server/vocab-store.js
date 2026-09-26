@@ -5,6 +5,12 @@ import { LEVEL_ORDER, KIND_ORDER, fold, slug, normalizeEntry, hydrate } from './
 import { parseLenientJson, jsonErrorLine, extractJsonBlocks } from './lenient-json.js';
 
 const SORTS = new Set(['added', 'alpha', 'level', 'kind', 'length', 'random']);
+export const AI_MODEL_CATEGORIES = Object.freeze(['unclassified', 'efficient', 'balanced', 'advanced']);
+const AI_MODEL_CATEGORY_SET = new Set(AI_MODEL_CATEGORIES);
+
+const validProviderId = value => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/.test(value);
+const validModelId = value => typeof value === 'string' && value.length > 0 && value.length <= 300 && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
+const modelKey = (provider, model) => `${provider}\u0000${model}`;
 
 /** Hash FNV-1a con mezcla final: orden aleatorio estable para una semilla. */
 function mix(seed, id) {
@@ -211,6 +217,82 @@ export class VocabStore {
 
   history(limit = 15) {
     return this.#sql.history.all(limit);
+  }
+
+  /* ------------------------------------------------------- curación de IA */
+
+  aiPreferences() {
+    const models = new Map(this.#sql.aiPreferences.all().map(row => [modelKey(row.provider, row.model), {
+      visible: Boolean(row.visible), category: row.category
+    }]));
+    const saved = this.#sql.aiDefault.get();
+    return {
+      models,
+      default: saved?.default_provider ? { provider: saved.default_provider, model: saved.default_model } : null
+    };
+  }
+
+  /** Aplica preferencias persistidas sin modificar el snapshot completo descubierto. */
+  projectAiCatalog(snapshot, { admin = false } = {}) {
+    const preferences = this.aiPreferences();
+    const allProviders = (snapshot?.providers || []).map(provider => ({
+      ...provider,
+      models: provider.models.map(model => {
+        const preference = preferences.models.get(modelKey(provider.id, model.id));
+        return { ...model, visible: preference?.visible ?? true, category: preference?.category ?? 'unclassified' };
+      })
+    }));
+    const providers = allProviders.flatMap(provider => {
+      const models = provider.models.filter(model => model.visible);
+      return models.length ? [{ ...provider, models }] : [];
+    });
+    const savedDefault = preferences.default;
+    const hasSavedDefault = providers.some(provider => provider.id === savedDefault?.provider && provider.models.some(model => model.id === savedDefault.model));
+    const first = providers.find(provider => provider.models.length);
+    const resolvedDefault = hasSavedDefault ? savedDefault : first ? { provider: first.id, model: first.models[0].id } : null;
+    return {
+      ...snapshot,
+      providers,
+      default: resolvedDefault,
+      ...(admin ? { allProviders, persistedDefault: savedDefault, defaultFallback: Boolean(savedDefault && !hasSavedDefault && resolvedDefault) } : {})
+    };
+  }
+
+  /** Guarda solo IDs del snapshot completo actual y conserva overrides de modelos ausentes. */
+  saveAiCuration(snapshot, input) {
+    if (!input || typeof input !== 'object' || !Array.isArray(input.models)) throw new TypeError('La curación debe incluir el catálogo completo de modelos.');
+    const catalog = new Set();
+    for (const provider of snapshot?.providers || []) {
+      for (const model of provider.models || []) catalog.add(modelKey(provider.id, model.id));
+    }
+    const updates = new Map();
+    for (const item of input.models) {
+      if (!validProviderId(item?.provider) || !validModelId(item?.model)) throw new TypeError('La curación contiene un identificador de modelo no válido.');
+      const key = modelKey(item.provider, item.model);
+      if (!catalog.has(key)) throw new TypeError(`El modelo "${item.model}" no pertenece al catálogo completo actual.`);
+      if (updates.has(key)) throw new TypeError(`El modelo "${item.model}" está repetido en la curación.`);
+      if (typeof item.visible !== 'boolean') throw new TypeError(`La visibilidad de "${item.model}" debe ser verdadera o falsa.`);
+      if (!AI_MODEL_CATEGORY_SET.has(item.category)) throw new TypeError(`La categoría de "${item.model}" no es válida.`);
+      updates.set(key, item);
+    }
+    if (updates.size !== catalog.size) throw new TypeError('La curación debe incluir una vez cada modelo del catálogo completo actual.');
+
+    const visible = [...updates.values()].filter(item => item.visible);
+    const nextDefault = input.default;
+    if (!visible.length) {
+      if (nextDefault !== null) throw new TypeError('Sin modelos visibles, el modelo predeterminado debe quedar vacío.');
+    } else {
+      if (!validProviderId(nextDefault?.provider) || !validModelId(nextDefault?.model)) throw new TypeError('Selecciona un modelo predeterminado visible.');
+      if (!updates.get(modelKey(nextDefault.provider, nextDefault.model))?.visible) throw new TypeError('El modelo predeterminado debe estar visible en el catálogo actual.');
+    }
+
+    this.#transaction(() => {
+      for (const item of updates.values()) this.#sql.upsertAiPreference.run({
+        provider: item.provider, model: item.model, visible: item.visible ? 1 : 0, category: item.category
+      });
+      this.#sql.updateAiDefault.run({ provider: nextDefault?.provider ?? null, model: nextDefault?.model ?? null });
+    });
+    return this.projectAiCatalog(snapshot, { admin: true });
   }
 
   /** Respaldo completo en el mismo formato que se importa (conserva addedAt). */

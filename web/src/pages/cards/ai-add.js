@@ -1,6 +1,6 @@
 /* "Crear tarjeta con IA" desde la búsqueda: barra de sugerencia, diálogo,
    generación, vista previa y guardado. */
-import { $, esc, store, toast, findAiModel, resolveAiDefaultModel, OPENCODE_SESSION_LIMIT_KEY } from '../../shared/utils.js';
+import { $, esc, store, toast, findAiModel, resolveAiDefaultModel, OPENCODE_SESSION_LIMIT_KEY, AI_CATEGORY_LABELS } from '../../shared/utils.js';
 import { meta, api, authed, cardHTML, flip, speak, applyMeta, resetFeed, onFirstPage } from './app.js';
 
 const ICON_SPARK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.4 2.4M15.3 15.3l2.4 2.4M6.3 17.7l2.4-2.4M15.3 8.7l2.4-2.4"/></svg>';
@@ -81,6 +81,14 @@ $('#aiModelPicker').addEventListener('change', e => {
   renderModelSummary();
 });
 
+$('#aiModelPicker').addEventListener('click', e => {
+  const button = e.target.closest('.ai-provider-toggle');
+  if (!button) return;
+  const content = document.getElementById(button.getAttribute('aria-controls'));
+  content.hidden = !content.hidden;
+  button.setAttribute('aria-expanded', String(!content.hidden));
+});
+
 function selectedModel(){
   return findAiModel(meta?.ai, ai.selection);
 }
@@ -96,6 +104,7 @@ function renderModelSummary(){
 
 function renderModelPicker(){
   const star = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>';
+  const caret = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
   const providers = meta?.ai?.providers || [];
   const total = providers.reduce((sum, provider) => sum + provider.models.length, 0);
   const help = !total
@@ -105,19 +114,24 @@ function renderModelPicker(){
       : '<p class="ai-model-help">Elige un modelo para esta creación. La selección es temporal; cambia el predeterminado en Administración.</p>';
   const freshness = meta?.ai?.stale ? '<p class="ai-model-warning">El catálogo está desactualizado; se muestra el último resultado disponible.</p>' : '';
   const errors = (meta?.ai?.errors || []).map(error => `<p class="ai-model-warning">${esc(error.message)}</p>`).join('');
-  $('#aiModelPicker').innerHTML = help + freshness + errors + providers.map(provider => `
-    <fieldset class="ai-model-group">
-      <legend>${esc(provider.label)}</legend>
+  $('#aiModelPicker').innerHTML = help + freshness + errors + providers.map((provider, index) => {
+    const id = `ai-provider-${provider.id.replace(/[^a-z0-9_-]/gi, '-')}`;
+    return `<section class="ai-model-group">
+      <h3><button type="button" class="ai-provider-toggle" aria-expanded="${provider.id === ai.selection?.provider || (!ai.selection && index === 0)}" aria-controls="${esc(id)}"><span>${esc(provider.label)}</span>${caret}</button></h3>
+      <div id="${esc(id)}"${provider.id === ai.selection?.provider || (!ai.selection && index === 0) ? '' : ' hidden'}>
       ${provider.models.map(model => {
         const selected = provider.id === ai.selection?.provider && model.id === ai.selection?.model;
         const preferred = provider.id === ai.defaultModel?.provider && model.id === ai.defaultModel?.model;
         return `<div class="ai-model-option">
-          <label><input type="radio" name="ai-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${selected ? ' checked' : ''}> <span>${esc(model.label)}${model.group ? ` <small>${esc(model.group)}</small>` : ''}</span></label>
-          <span class="ai-model-default" title="${preferred ? 'Predeterminado del navegador' : 'Selección temporal'}">${preferred ? star : ''}<span class="sr-only">${preferred ? 'Predeterminado del navegador' : ''}</span></span>
+          <label><input type="radio" name="ai-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${selected ? ' checked' : ''}> <span><b>${esc(model.label)}</b><small>${esc(provider.label)}${model.group ? ` · ${esc(model.group)}` : ''}</small></span></label>
+          <span class="model-category category-${esc(model.category)}">${esc(AI_CATEGORY_LABELS[model.category] || AI_CATEGORY_LABELS.unclassified)}</span>
+          <span class="ai-model-default" title="${preferred ? 'Predeterminado global' : 'Selección temporal'}">${preferred ? star : ''}<span class="sr-only">${preferred ? 'Predeterminado global' : ''}</span></span>
         </div>`;
       }).join('')}
       ${provider.stale ? '<p class="ai-model-warning">Último catálogo disponible.</p>' : ''}
-    </fieldset>`).join('');
+      </div>
+    </section>`;
+  }).join('');
   renderModelSummary();
 }
 

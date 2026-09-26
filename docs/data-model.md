@@ -140,10 +140,28 @@ CREATE TABLE imports (
   skipped     INTEGER NOT NULL DEFAULT 0,
   errors      INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE ai_model_preferences (
+  provider TEXT NOT NULL,
+  model    TEXT NOT NULL,
+  visible  INTEGER NOT NULL CHECK (visible IN (0, 1)),
+  category TEXT NOT NULL CHECK (category IN ('unclassified', 'efficient', 'balanced', 'advanced')),
+  PRIMARY KEY (provider, model)
+);
+
+CREATE TABLE ai_settings (
+  id               INTEGER PRIMARY KEY CHECK (id = 1),
+  default_provider TEXT,
+  default_model    TEXT,
+  CHECK ((default_provider IS NULL) = (default_model IS NULL))
+);
 ```
 
 El servidor mantiene todas las tarjetas en memoria para filtrar y ordenar; cada
 escritura se hace en una transacción y luego refresca esa copia.
+La curación de modelos también se escribe en una transacción. Sus filas no se
+eliminan cuando un modelo desaparece del snapshot, para poder reaplicarlas si
+vuelve a publicarse.
 
 ## API
 
@@ -151,7 +169,7 @@ Lectura (pública):
 
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
-| GET | `/api/vocab/meta` | `{ total, lastUpdated, pageSize, levels, kinds, ai: { enabled, provider?, label?, model?, default, providers: [{ id, label, stale, fetchedAt, models: [{ id, label, group?, protocol? }] }], fetchedAt, refreshedAt, expiresAt, stale, errors: [{ provider, message }] } }` |
+| GET | `/api/vocab/meta` | `{ total, lastUpdated, pageSize, levels, kinds, ai: { enabled, provider?, label?, model?, default, providers: [{ id, label, stale, fetchedAt, models: [{ id, label, group?, category }] }], fetchedAt, refreshedAt, expiresAt, stale, errors: [{ provider, message }] } }`. `providers` contiene solo modelos visibles. |
 | POST | `/api/vocab/query` | Cuerpo: `{ skip, take, sort, dir, seed, q, levels, kinds, excludeIds }` → `{ total, skip, items: Tarjeta[], hasMore, exact: { id, head } \| null }` |
 | GET | `/api/vocab/export` | `{ $schema, exportedAt, entries: Tarjeta[] }` (descarga) |
 
@@ -164,12 +182,13 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
 | DELETE | `/api/vocab/entries/:id` | `{ ok, total }` |
-| GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, ai, opencodeSessionLimit: { default, min, max } }` |
-| POST | `/api/admin/ai/models/refresh` | Fuerza el descubrimiento y devuelve `ai` con catálogo, frescura y errores sanitizados. |
+| GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, ai, opencodeSessionLimit: { default, min, max } }`. `ai.providers` es la proyección visible y `ai.allProviders` es el snapshot completo con `visible` y `category` efectivos. |
+| POST | `/api/admin/ai/models/refresh` | Fuerza el descubrimiento y devuelve la misma vista administrativa completa, con frescura y errores sanitizados. |
+| PUT | `/api/admin/ai/curation` | `{ models: [{ provider, model, visible, category }], default: { provider, model } \| null }` → vista administrativa actualizada. Debe incluir exactamente una vez cada modelo del snapshot completo vigente. |
 | POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin }` → `{ items, summary, importId? }` |
 | POST | `/api/admin/import-folder` | `{ mode, dryRun }` → igual que `import` |
 | GET | `/api/admin/imports` | Últimas 15 filas de `imports` |
-| POST | `/api/admin/ai/generate` | `{ term, hint, mode, provider?, model?, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. `provider` y `model` deben formar un par del snapshot descubierto; si se omiten se usa el predeterminado resuelto. Para `opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50. |
+| POST | `/api/admin/ai/generate` | `{ term, hint, mode, provider?, model?, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. `provider` y `model` deben formar un par visible del snapshot vigente; un modelo oculto se rechaza aunque se envíe manualmente. Si se omiten se usa el predeterminado global resuelto. Para `opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50. |
 
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.
@@ -180,9 +199,8 @@ Azure se habilita solo con `AZURE_OPENAI_API_KEY` y `AZURE_OPENAI_ENDPOINT`; la
 raíz del portal se normaliza a `/openai/v1` y no requiere cambios en
 `config.json`. Custom y Ollama requieren configuración explícita no secreta.
 `AI_API_KEY` solo se aplica cuando existe un único proveedor explícito sin clave
-específica. Los IDs proceden de la API oficial de cada uno; `ai.provider` +
-`ai.model` únicamente expresa la preferencia inicial y debe existir en el
-snapshot para aplicarse. OpenCode Go usa su catálogo `/zen/go/v1/models`,
+específica. Los IDs proceden de la API oficial de cada uno. OpenCode Go usa su
+catálogo `/zen/go/v1/models`,
 separado de Zen, y models.dev solo aporta etiquetas, familias, protocolo y
 capacidades: nunca concede pertenencia. El servidor cachea el catálogo,
 deduplica refresh concurrente y aplica stale-if-error por proveedor. Nunca
@@ -194,8 +212,19 @@ La generación desacopla credenciales y transporte: puede usar
 OpenCode Go conserva `User-Agent` y `x-opencode-session`; los parámetros que la
 metadata marca como incompatibles, como `temperature`, se omiten.
 
-Administración guarda el predeterminado del navegador en
-`vocab-ai-default-model`; no modifica `config.json` ni el fallback del servidor.
-El cuadro **Crear con IA** parte de ese valor y permite una selección temporal
-distinta para cada apertura. Los valores locales corruptos u obsoletos se
-descartan a favor de `ai.default`.
+La visibilidad, categoría y selección predeterminada son ajustes globales de
+SQLite. Las categorías válidas son `unclassified` (**Sin clasificar**),
+`efficient` (**Eficiente**), `balanced` (**Equilibrado**) y `advanced`
+(**Avanzado**). Un modelo sin fila persistida es visible y queda sin clasificar.
+La visibilidad representa una decisión administrativa; no afirma que las
+credenciales tengan entitlement, cuota o acceso efectivo en el proveedor.
+
+Guardar exige que el predeterminado pertenezca al snapshot actual y sea visible
+si existe al menos un modelo visible. Con cero visibles exige `default: null` y
+la IA pública queda deshabilitada. Si el predeterminado persistido desaparece o
+se oculta, la lectura usa el primer modelo visible en orden de snapshot sin
+modificar la fila persistida. La vista administrativa conserva el catálogo
+completo y señala ese fallback; la vista pública, el selector principal y el
+diálogo solo reciben la proyección visible. El diálogo inicia con `ai.default` y
+mantiene cualquier cambio únicamente durante esa apertura. El valor antiguo de
+`localStorage` se elimina y nunca participa en la resolución.

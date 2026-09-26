@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { VocabStore } from '../vocab-store.js';
 import { tempStore, entry, source } from './helpers.js';
+
+const aiSnapshot = (models = ['a', 'b']) => ({
+  providers: [{ id:'openai', label:'OpenAI', stale:false, models:models.map(id => ({ id, label:id.toUpperCase(), protocol:'responses' })) }],
+  default:{ provider:'openai', model:models[0] }, stale:false, errors:[]
+});
 
 test('plan no guarda nada; apply guarda y registra la importación', t => {
   const { store, cleanup } = tempStore(); t.after(cleanup);
@@ -76,4 +83,69 @@ test('eliminar y exportar', t => {
   assert.deepEqual(exp.entries.map(e => e.id), ['b']);
   assert.ok(exp.entries[0].addedAt);
   assert.equal(exp.entries[0].source, undefined);
+});
+
+test('migra y persiste la curación global de modelos en SQLite', t => {
+  const { store, path, cleanup } = tempStore();
+  const snapshot = aiSnapshot();
+  store.saveAiCuration(snapshot, {
+    models:[
+      { provider:'openai', model:'a', visible:false, category:'efficient' },
+      { provider:'openai', model:'b', visible:true, category:'advanced' }
+    ],
+    default:{ provider:'openai', model:'b' }
+  });
+  store.close();
+  const db = new DatabaseSync(path);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2);
+  db.close();
+  const reopened = new VocabStore(path);
+  t.after(() => { reopened.close(); cleanup(); });
+  const projected = reopened.projectAiCatalog(snapshot, { admin:true });
+  assert.deepEqual(projected.providers[0].models.map(model => model.id), ['b']);
+  assert.equal(projected.allProviders[0].models[0].category, 'efficient');
+  assert.deepEqual(projected.default, { provider:'openai', model:'b' });
+});
+
+test('rechaza categorías, IDs, modelos desconocidos y predeterminados ocultos', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const snapshot = aiSnapshot();
+  const valid = [
+    { provider:'openai', model:'a', visible:true, category:'balanced' },
+    { provider:'openai', model:'b', visible:false, category:'unclassified' }
+  ];
+  assert.throws(() => store.saveAiCuration(snapshot, { models:valid.map((item, i) => i ? item : { ...item, category:'cheap' }), default:{ provider:'openai', model:'a' } }), /categoría/);
+  assert.throws(() => store.saveAiCuration(snapshot, { models:[...valid, { provider:'openai', model:'injected', visible:true, category:'advanced' }], default:{ provider:'openai', model:'a' } }), /catálogo completo/);
+  assert.throws(() => store.saveAiCuration(snapshot, { models:valid.map((item, i) => i ? { ...item, model:' bad' } : item), default:{ provider:'openai', model:'a' } }), /identificador/);
+  assert.throws(() => store.saveAiCuration(snapshot, { models:valid, default:{ provider:'openai', model:'b' } }), /visible/);
+  assert.equal(store.aiPreferences().models.size, 0, 'una validación fallida no escribe parcialmente');
+});
+
+test('permite cero modelos visibles y exige predeterminado vacío', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const snapshot = aiSnapshot(['a']);
+  const models = [{ provider:'openai', model:'a', visible:false, category:'unclassified' }];
+  assert.throws(() => store.saveAiCuration(snapshot, { models, default:{ provider:'openai', model:'a' } }), /debe quedar vacío/);
+  const projected = store.saveAiCuration(snapshot, { models, default:null });
+  assert.deepEqual(projected.providers, []);
+  assert.equal(projected.default, null);
+  assert.equal(projected.allProviders[0].models[0].visible, false);
+});
+
+test('un predeterminado ausente usa fallback sin perder preferencias y se recupera al reaparecer', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.saveAiCuration(aiSnapshot(), {
+    models:[
+      { provider:'openai', model:'a', visible:true, category:'efficient' },
+      { provider:'openai', model:'b', visible:true, category:'advanced' }
+    ],
+    default:{ provider:'openai', model:'b' }
+  });
+  const disappeared = store.projectAiCatalog(aiSnapshot(['a']), { admin:true });
+  assert.deepEqual(disappeared.default, { provider:'openai', model:'a' });
+  assert.equal(disappeared.defaultFallback, true);
+  assert.deepEqual(disappeared.persistedDefault, { provider:'openai', model:'b' });
+  const returned = store.projectAiCatalog(aiSnapshot(), { admin:true });
+  assert.deepEqual(returned.default, { provider:'openai', model:'b' });
+  assert.equal(returned.allProviders[0].models[1].category, 'advanced');
 });

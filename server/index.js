@@ -6,6 +6,7 @@ import { ROOT, loadConfig } from './config.js';
 import { VocabStore, readFolderSources } from './vocab-store.js';
 import { createAuth } from './auth.js';
 import { generateEntries, publicAiInfo, OPENCODE_SESSION_LIMIT } from './ai.js';
+import { aiModelCatalog } from './ai-models.js';
 
 // --dev: Vite sirve el frontend con recarga en caliente. Sin --dev: se sirve dist/ (npm run build).
 const DEV = process.argv.includes('--dev');
@@ -37,7 +38,7 @@ const vocab = express.Router();
 
 vocab.get('/meta', async (req, res) => {
   const cfg = await loadConfig();
-  res.json({ ...store.meta(cfg.pageSize), ai: await publicAiInfo(cfg) });
+  res.json({ ...store.meta(cfg.pageSize), ai: await publicAiInfo(cfg, { store }) });
 });
 
 vocab.post('/query', json('64kb'), async (req, res) => res.json(store.query(req.body ?? {}, await loadConfig())));
@@ -66,7 +67,7 @@ admin.get('/check', async (req, res) => {
     total: store.size,
     dataFolder: cfg.dataFolderSetting,
     maxImportBytes: cfg.maxImportBytes,
-    ai: await publicAiInfo(cfg),
+    ai: await publicAiInfo(cfg, { store, admin: true }),
     opencodeSessionLimit: OPENCODE_SESSION_LIMIT
   });
 });
@@ -97,7 +98,19 @@ admin.get('/imports', (req, res) => res.json(store.history(15)));
 
 admin.post('/ai/models/refresh', async (req, res) => {
   const cfg = await loadConfig();
-  res.json(await publicAiInfo(cfg, { force: true }));
+  res.json(await publicAiInfo(cfg, { force: true, store, admin: true }));
+});
+
+admin.put('/ai/curation', json('256kb'), async (req, res) => {
+  try {
+    const cfg = await loadConfig();
+    const snapshot = await aiModelCatalog.get(cfg);
+    store.saveAiCuration(snapshot, req.body);
+    res.json(await publicAiInfo(cfg, { store, admin: true, catalog: { get: async () => snapshot } }));
+  } catch (err) {
+    if (err instanceof TypeError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
 });
 
 // Genera la tarjeta de una palabra o frase con la IA configurada. No guarda nada:
@@ -115,7 +128,8 @@ admin.post('/ai/generate', aiLimiter, json('8kb'), async (req, res) => {
     const ai = await generateEntries(cfg, [{ term, hint }], {
       provider: req.body?.provider,
       model: req.body?.model,
-      opencodeSessionRequestLimit: req.body?.opencodeSessionRequestLimit
+      opencodeSessionRequestLimit: req.body?.opencodeSessionRequestLimit,
+      store
     });
     const source = `IA · ${ai.label}`;
     const result = store.plan([{ name: source, text: ai.text }], asMode(req.body?.mode), { withEntries: true });
