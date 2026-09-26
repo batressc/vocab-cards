@@ -115,10 +115,19 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada.
 
 /* -------------------------------------------------------------- frontend */
 if (DEV) {
+  // La config se importa directo con configFile: false. Si Vite carga un archivo de
+  // configuración, lo empaqueta en node_modules/.vite-temp/vite.config.js.timestamp-*.mjs,
+  // lo importa y lo borra en el arranque; node --watch ve ese cambio y reinicia, y cada
+  // reinicio escribe un temporal nuevo: ciclo infinito. Así no se genera ningún temporal.
   const { createServer } = await import('vite');
+  const { default: viteConfig } = await import('../vite.config.js');
+  const inline = typeof viteConfig === 'function'
+    ? await viteConfig({ command: 'serve', mode: 'development' })
+    : viteConfig;
   const vite = await createServer({
-    configFile: resolve(ROOT, 'vite.config.js'),
-    server: { middlewareMode: true },
+    ...inline,
+    configFile: false,
+    server: { ...inline.server, middlewareMode: true },
     appType: 'mpa'
   });
   app.use(vite.middlewares);
