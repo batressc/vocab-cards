@@ -12,6 +12,8 @@ import { aiModelCatalog } from './ai-models.js';
 import { generatePreview } from './ai-workflow.js';
 import { normalizeTelemetryBatch } from './telemetry.js';
 import { validateBackupDatabase } from './db.js';
+import { createHealthHandler } from './health.js';
+import { AiCredentialsError } from './ai-credentials.js';
 
 // --dev: Vite sirve el frontend con recarga en caliente. Sin --dev: se sirve dist/ (npm run build).
 const DEV = process.argv.includes('--dev');
@@ -30,6 +32,7 @@ if (store.size === 0 && boot.seedFromFolderWhenEmpty && store.shouldSeedWhenEmpt
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', boot.trustProxy);
+app.get('/api/health', createHealthHandler(store));
 
 const json = limit => express.json({ limit });
 const binary = limit => express.raw({ type: ['application/vnd.sqlite3', 'application/octet-stream'], limit });
@@ -302,6 +305,7 @@ app.use((err, req, res, next) => {
     ? 'El respaldo supera el límite permitido. Reduce el archivo o sube maxBackupBytes en config.json.'
     : 'El contenido es demasiado grande. Divídelo en partes o sube maxImportBytes en config.json.' });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'La petición no es JSON válido.' });
+  if (err instanceof AiCredentialsError) return res.status(err.status).json({ error: err.message, code: err.code });
   console.error(err);
   res.status(500).json({ error: 'Error interno del servidor.' });
 });

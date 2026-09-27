@@ -1,7 +1,10 @@
+import { readAiCredentials } from './ai-credentials.js';
+
 const DEFAULT_TTL_MS = 5 * 60_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 const AUTO_KEYED_PROVIDERS = new Set(['opencode-go', 'openai', 'anthropic', 'gemini']);
+const SNAPSHOT_CREDENTIALS = Symbol('snapshotCredentials');
 
 export const AI_PROVIDERS = Object.freeze({
   'opencode-go': { label: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', keyEnv: 'OPENCODE_API_KEY', protocol: 'chat', jsonMode: false },
@@ -31,43 +34,44 @@ function providerEntries(cfg) {
   });
 }
 
-function specificApiKey(preset) {
-  return preset.keyEnv && preset.keyEnv !== 'AI_API_KEY' ? clean(process.env[preset.keyEnv]) : '';
+function specificApiKey(preset, credentials) {
+  return preset.keyEnv && preset.keyEnv !== 'AI_API_KEY' ? clean(credentials[preset.keyEnv]) : '';
 }
 
 // La clave genérica solo es segura si identifica un único proveedor explícito.
-function genericKeyProvider(cfg) {
-  if (!clean(process.env.AI_API_KEY)) return '';
+function genericKeyProvider(cfg, credentials) {
+  if (!clean(credentials.AI_API_KEY)) return '';
   const candidates = providerEntries(cfg).filter(({ id, options }) => {
     const preset = AI_PROVIDERS[id];
     const auth = options.auth || preset?.auth || 'bearer';
-    return id !== 'azure' && preset && !preset.noKey && auth !== 'none' && !specificApiKey(preset);
+    return id !== 'azure' && preset && !preset.noKey && auth !== 'none' && !specificApiKey(preset, credentials);
   });
   return candidates.length === 1 ? candidates[0].id : '';
 }
 
-function activeProviderIds(cfg) {
+function activeProviderIds(cfg, credentials) {
   const entries = new Map(providerEntries(cfg).map(entry => [entry.id, entry.options]));
-  const genericProvider = genericKeyProvider(cfg);
+  const genericProvider = genericKeyProvider(cfg, credentials);
   return Object.entries(AI_PROVIDERS).flatMap(([id, preset]) => {
     const options = entries.get(id);
     const explicit = options !== undefined;
-    const hasCredential = Boolean(specificApiKey(preset)) || genericProvider === id;
+    const hasCredential = Boolean(specificApiKey(preset, credentials)) || genericProvider === id;
     if (AUTO_KEYED_PROVIDERS.has(id)) return hasCredential ? [id] : [];
-    if (id === 'azure') return specificApiKey(preset) && azureBaseUrl() ? [id] : [];
+    if (id === 'azure') return specificApiKey(preset, credentials) && azureBaseUrl() ? [id] : [];
     if (id === 'custom') return explicit && ((options.auth || preset.auth || 'bearer') === 'none' || hasCredential) ? [id] : [];
     return id === 'ollama' && explicit ? [id] : [];
   });
 }
 
-export function resolveProvider(cfg, id) {
+export function resolveProvider(cfg, id, credentialSnapshot = readAiCredentials()) {
+  const credentials = credentialSnapshot.credentials;
   id = clean(id).toLowerCase();
   const preset = AI_PROVIDERS[id];
   const entry = providerEntries(cfg).find(item => item.id === id);
-  if (!preset || !activeProviderIds(cfg).includes(id)) return { enabled: false, provider: id, label: preset?.label || id || 'Proveedor desconocido', reason: `El proveedor "${id || 'desconocido'}" no está disponible.` };
+  if (!preset || !activeProviderIds(cfg, credentials).includes(id)) return { enabled: false, provider: id, label: preset?.label || id || 'Proveedor desconocido', reason: `El proveedor "${id || 'desconocido'}" no está disponible.` };
   const ai = cfg.ai || {};
   const options = entry?.options || {};
-  const apiKey = specificApiKey(preset) || (genericKeyProvider(cfg) === id ? clean(process.env.AI_API_KEY) : '');
+  const apiKey = specificApiKey(preset, credentials) || (genericKeyProvider(cfg, credentials) === id ? clean(credentials.AI_API_KEY) : '');
   const auth = id === 'azure' ? preset.auth : options.auth || preset.auth || 'bearer';
   const baseUrl = id === 'azure'
     ? azureBaseUrl()
@@ -226,20 +230,19 @@ async function loadMetadata(fetchImpl, providers, timeoutMs) {
   }
 }
 
-function configSignature(cfg) {
-  return JSON.stringify(cfg.ai || {});
+function configSignature(cfg, credentialRevision) {
+  return JSON.stringify([cfg.ai || {}, credentialRevision]);
 }
 
-export function createAiModelCatalog({ fetchImpl = globalThis.fetch, now = Date.now } = {}) {
+export function createAiModelCatalog({ fetchImpl = globalThis.fetch, now = Date.now, readCredentials = readAiCredentials } = {}) {
   let state = null;
   let inFlight = null;
 
-  async function refresh(cfg) {
-    const signature = configSignature(cfg);
+  async function refresh(cfg, credentialSnapshot, signature) {
     const startedAt = now();
-    const configured = activeProviderIds(cfg);
+    const configured = activeProviderIds(cfg, credentialSnapshot.credentials);
     const timeoutMs = positive(cfg.ai?.catalogTimeoutMs, DEFAULT_TIMEOUT_MS);
-    const resolved = configured.map(id => ({ ...resolveProvider(cfg, id), timeoutMs }));
+    const resolved = configured.map(id => ({ ...resolveProvider(cfg, id, credentialSnapshot), timeoutMs }));
     const metadata = await loadMetadata(fetchImpl, resolved.filter(item => item.enabled), timeoutMs);
     const previous = state?.signature === signature ? state.snapshot : null;
     const settled = await Promise.all(resolved.map(async provider => {
@@ -274,15 +277,17 @@ export function createAiModelCatalog({ fetchImpl = globalThis.fetch, now = Date.
       stale: providers.some(provider => provider.stale),
       errors
     };
+    Object.defineProperty(snapshot, SNAPSHOT_CREDENTIALS, { value: credentialSnapshot });
     state = { signature, expiresAt: startedAt + ttlMs, snapshot };
     return snapshot;
   }
 
   async function get(cfg, { force = false } = {}) {
-    const signature = configSignature(cfg);
+    const credentialSnapshot = readCredentials();
+    const signature = configSignature(cfg, credentialSnapshot.revision);
     if (!force && state?.signature === signature && now() < state.expiresAt) return state.snapshot;
     if (inFlight?.signature === signature) return inFlight.promise;
-    const promise = refresh(cfg).finally(() => { if (inFlight?.promise === promise) inFlight = null; });
+    const promise = refresh(cfg, credentialSnapshot, signature).finally(() => { if (inFlight?.promise === promise) inFlight = null; });
     inFlight = { signature, promise };
     return promise;
   }
@@ -291,6 +296,10 @@ export function createAiModelCatalog({ fetchImpl = globalThis.fetch, now = Date.
 }
 
 export const aiModelCatalog = createAiModelCatalog();
+
+export function snapshotCredentials(snapshot) {
+  return snapshot?.[SNAPSHOT_CREDENTIALS] || readAiCredentials();
+}
 
 export function findCatalogModel(snapshot, selection) {
   const provider = snapshot?.providers.find(item => item.id === clean(selection?.provider).toLowerCase());

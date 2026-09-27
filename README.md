@@ -65,8 +65,9 @@ Guía para agentes de código: [`AGENTS.md`](AGENTS.md).
 
 ## Configuración
 
-`config.json` guarda la configuración que no es secreta y se versiona. Los
-secretos van en `.env`, que Git ignora.
+`config.json` guarda la configuración que no es secreta y se versiona. En
+desarrollo los secretos pueden ir en `.env`, que Git ignora; en contenedor se
+recomienda `AI_CREDENTIALS_FILE` sobre un directorio montado de solo lectura.
 
 | Clave | Por defecto | Descripción |
 |---|---|---|
@@ -90,9 +91,17 @@ secretos van en `.env`, que Git ignora.
 Variables de entorno (`.env`):
 - **Administración:** `ADMIN_TOKEN`.
 - **Claves de IA:** `OPENCODE_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` y `AZURE_OPENAI_API_KEY`.
-- **Azure OpenAI:** `AZURE_OPENAI_ENDPOINT`, junto con `AZURE_OPENAI_API_KEY`. Tras cambiar una clave o endpoint, reinicia el servidor.
+- **Azure OpenAI:** `AZURE_OPENAI_ENDPOINT`, junto con `AZURE_OPENAI_API_KEY`.
 - **Compatibilidad:** `AI_API_KEY` solo autentica un proveedor que esté configurado explícitamente y sea el único sin clave específica; nunca habilita varios proveedores a la vez.
-- **Opcionales:** `PORT`, `HOST`, `VOCAB_DB`, `VOCAB_DATA_FOLDER`, `VOCAB_PAGE_SIZE` y `VOCAB_CONFIG`.
+- **Rutas y red:** `PORT`, `HOST`, `VOCAB_DB`, `VOCAB_DATA_FOLDER`, `VOCAB_TRUST_PROXY` y `VOCAB_CONFIG`.
+- **Datos:** `VOCAB_INCLUDE_SUBFOLDERS`, `VOCAB_SEED_FROM_FOLDER_WHEN_EMPTY`, `VOCAB_PAGE_SIZE`, `VOCAB_MAX_PAGE_SIZE`, `VOCAB_MAX_IMPORT_BYTES` y `VOCAB_MAX_BACKUP_BYTES`.
+- **IA:** `AI_TIMEOUT_MS`, `AI_CATALOG_TTL_MS`, `AI_CATALOG_TIMEOUT_MS` y `AI_MAX_TERMS`.
+
+Los booleanos aceptan `true`, `false`, `1` o `0`. Un entero válido del entorno
+sobrescribe el valor validado de `config.json`; si es inválido o está fuera de
+rango, se usa el valor JSON válido o, en su defecto, el valor predeterminado
+tipado. No se serializan estructuras como `ai.providers` en variables: usa otro
+archivo mediante `VOCAB_CONFIG`.
 
 Las suscripciones web (ChatGPT Plus, la app de Gemini, Copilot) no incluyen
 acceso por API: se necesita una clave de API del proveedor.
@@ -222,16 +231,75 @@ aumentarlo puede prolongar la sesión actual hasta el nuevo límite. Ninguna de
 estas cabeceras ni esta lógica se aplica a otros proveedores. Cada intento de
 envío cuenta, incluso si OpenCode Go devuelve un error o no responde.
 
-## Despliegue
+## Despliegue con Docker Compose en Proxmox/LXC
 
-**Docker**
+Ejecuta una sola réplica. SQLite usa WAL y necesita que se conserve **todo
+`/data`**; dos contenedores sobre el mismo archivo no constituyen un despliegue
+horizontal soportado.
+
+1. Instala Docker y el complemento Compose dentro de un LXC con las funciones
+   necesarias para contenedores anidados.
+2. Comprueba que el volumen y el directorio secreto sean legibles/escribibles
+   por el UID/GID `1000:1000` usado por la imagen. En un LXC no privilegiado,
+   considera el mapeo de UID del host; valida con `docker compose run --rm app id`.
+3. Crea un `.env` de despliegue con `ADMIN_TOKEN`, `AI_SECRETS_DIR` absoluto y,
+   si procede, `VOCAB_BIND_ADDRESS`, `VOCAB_PORT` y `VOCAB_TRUST_PROXY`.
+4. Prepara `credentials.json` y arranca el servicio.
 
 ```bash
-docker build -t vocab-cards .
-docker run -d -p 3000:3000 --env-file .env -v vocab-data:/data --restart unless-stopped vocab-cards
+sudo install -d -m 0750 -o 1000 -g 1000 /srv/vocab-cards/secrets
+sudo install -m 0400 -o 1000 -g 1000 /dev/null /srv/vocab-cards/secrets/credentials.json
+sudoedit /srv/vocab-cards/secrets/credentials.json
+docker compose up -d --build
+docker compose ps
 ```
 
-**Node en un servidor**
+El archivo tiene un objeto JSON y solo admite `OPENCODE_API_KEY`,
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+`AZURE_OPENAI_API_KEY` y `AI_API_KEY`. Por ejemplo:
+
+```json
+{
+  "OPENAI_API_KEY": "valor-secreto"
+}
+```
+
+Cuando `AI_CREDENTIALS_FILE` está configurado, ese archivo es autoritativo:
+una ausencia, JSON inválido, campo desconocido, valor no textual o archivo
+excesivo bloquea las operaciones IA con `503`; `{}` revoca todas las claves.
+El servidor lo relee por operación y no expone claves, contenido, revisión ni
+ruta. Rota de forma atómica reemplazando el archivo dentro del mismo directorio
+montado, no sobrescribiéndolo parcialmente:
+
+```bash
+sudo install -m 0400 -o 1000 -g 1000 credentials.json.new /srv/vocab-cards/secrets/credentials.json.new
+sudo mv /srv/vocab-cards/secrets/credentials.json.new /srv/vocab-cards/secrets/credentials.json
+```
+
+Cambiar `.env` o las variables de Docker **no modifica el entorno del proceso
+vivo**: requiere `docker compose up -d --force-recreate`. En cambio,
+`AI_CREDENTIALS_FILE` permite rotar o revocar las claves IA sin recrear el
+contenedor. `AZURE_OPENAI_ENDPOINT` no es una credencial allowlisted; cambiarlo
+también requiere recrear.
+
+Compose publica por defecto `127.0.0.1:3000`, adecuado para un reverse proxy en
+el mismo LXC. Termina TLS en Nginx, Caddy o HAProxy, reenvía a ese puerto y deja
+`VOCAB_TRUST_PROXY=1`; si el proxy está en otra máquina, cambia explícitamente
+`VOCAB_BIND_ADDRESS` y limita el acceso con firewall. Nunca publiques sin un
+`ADMIN_TOKEN` robusto.
+
+La imagen usa Node 24.21.0 sobre Debian Trixie slim y fija también el digest
+multi-arquitectura para que una reconstrucción sea reproducible. El tag no se
+actualiza por sí solo: revisa periódicamente los parches de Node y Debian,
+verifica el digest manifest publicado para todas las arquitecturas necesarias,
+actualiza tag y digest juntos en ambos stages, reconstruye y prueba antes de
+desplegar.
+
+El endpoint `GET /api/health` solo comprueba proceso y SQLite; no consulta
+catálogos, modelos ni proveedores externos. Docker lo usa para determinar el
+estado del contenedor.
+
+## Despliegue con Node
 
 ```bash
 npm ci

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAiModelCatalog } from '../ai-models.js';
@@ -9,7 +9,7 @@ import { tempStore } from './helpers.js';
 import { userMessage } from '../prompt.js';
 import { generatePreview } from '../ai-workflow.js';
 
-const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'OPENCODE_API_KEY'];
+const KEY_ENV = ['AI_API_KEY', 'AI_CREDENTIALS_FILE', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'OPENCODE_API_KEY'];
 
 function isolateKeyEnv(t, values = {}) {
   const saved = new Map(KEY_ENV.map(key => [key, process.env[key]]));
@@ -249,6 +249,55 @@ test('cachea por TTL, deduplica refresh concurrente y conserva stale-if-error', 
   assert.equal(stale.providers[0].stale, true);
   assert.deepEqual(stale.providers[0].models.map(model => model.id), ['model-a']);
   assert.doesNotMatch(JSON.stringify(stale.errors), /secret|private\.example|token/);
+});
+
+test('la rotación invalida el catálogo y la generación usa la nueva clave', async t => {
+  isolateKeyEnv(t);
+  const dir = mkdtempSync(join(tmpdir(), 'vocab-ai-rotation-'));
+  const path = join(dir, 'credentials.json');
+  process.env.AI_CREDENTIALS_FILE = path;
+  writeFileSync(path, '{"OPENAI_API_KEY":"first-key"}');
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const catalogKeys = [];
+  const catalog = createAiModelCatalog({ fetchImpl: async (url, options) => {
+    if (String(url) === 'https://models.dev/api.json') return jsonResponse({});
+    catalogKeys.push(options.headers.authorization);
+    return jsonResponse({ data: [{ id: 'model' }] });
+  } });
+  const cfg = { ai: { provider: 'openai', model: 'model', catalogTtlMs: 60_000 } };
+  await catalog.get(cfg);
+  await catalog.get(cfg);
+
+  const replacement = join(dir, 'credentials.next.json');
+  writeFileSync(replacement, '{"OPENAI_API_KEY":"second-key"}');
+  renameSync(replacement, path);
+  await catalog.get(cfg);
+  let generationAuth;
+  await generateEntries(cfg, [{ term: 'word' }], {
+    provider: 'openai', model: 'model', catalog,
+    fetchImpl: async (url, options) => {
+      generationAuth = options.headers.authorization;
+      return jsonResponse({ choices: [{ message: { content: '{"entries":[]}' } }] });
+    }
+  });
+
+  assert.deepEqual(catalogKeys, ['Bearer first-key', 'Bearer second-key']);
+  assert.equal(generationAuth, 'Bearer second-key');
+});
+
+test('un archivo de credenciales inválido produce un 503 sanitizado', async t => {
+  isolateKeyEnv(t);
+  const dir = mkdtempSync(join(tmpdir(), 'vocab-ai-broken-'));
+  const path = join(dir, 'private-credentials.json');
+  writeFileSync(path, '{"UNKNOWN":"secret-value"}');
+  process.env.AI_CREDENTIALS_FILE = path;
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  await assert.rejects(publicAiInfo({ ai: {} }), error => {
+    assert.equal(error.status, 503);
+    assert.doesNotMatch(error.message, /secret-value|private-credentials|vocab-ai-broken/);
+    return true;
+  });
 });
 
 test('sin snapshot exitoso omite solo el proveedor fallido y publica error sanitizado', async t => {

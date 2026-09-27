@@ -3,6 +3,11 @@ dist
 .git
 .env
 .env.*
+!.env.example
+secrets
+secrets.*
+*.secret
+credentials*.json
 data/*.db*
 *.log
 coverage

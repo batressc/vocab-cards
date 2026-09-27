@@ -54,6 +54,10 @@ export class VocabStore {
 
   close() { this.#db.close(); }
 
+  checkHealth() {
+    this.#db.prepare('SELECT 1').get();
+  }
+
   #open() {
     ({ db: this.#db, sql: this.#sql, transaction: this.#transaction } = openDatabase(this.#dbPath));
     this.refresh();

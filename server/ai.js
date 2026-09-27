@@ -1,7 +1,7 @@
 /* Conector de generación IA. El catálogo y las credenciales viven solo en backend. */
 import { loadSystemPrompt, userMessage } from './prompt.js';
 import { randomUUID } from 'node:crypto';
-import { aiModelCatalog, findCatalogModel, resolveProvider } from './ai-models.js';
+import { aiModelCatalog, findCatalogModel, resolveProvider, snapshotCredentials } from './ai-models.js';
 
 export const OPENCODE_USER_AGENT = 'vocab-cards/1.0.0';
 export const OPENCODE_SESSION_LIMIT = Object.freeze({ default: 50, min: 1, max: 1000 });
@@ -37,7 +37,7 @@ export async function resolveAi(cfg, selection, options = {}) {
   const allowed = findCatalogModel(curated, requested);
   const selected = allowed && findCatalogModel(snapshot, requested);
   if (!selected) return { enabled: false, status: 400, reason: 'El modelo de IA seleccionado ya no está disponible. Actualiza el catálogo y elige otro modelo.' };
-  const provider = resolveProvider(cfg, selected.provider.id);
+  const provider = resolveProvider(cfg, selected.provider.id, snapshotCredentials(snapshot));
   if (!provider.enabled) return provider;
   return {
     ...provider,

@@ -1,0 +1,46 @@
+services:
+  app:
+    build:
+      context: .
+    image: vocab-cards:local
+    init: true
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ADMIN_TOKEN: "${ADMIN_TOKEN:?Define ADMIN_TOKEN en .env}"
+      AI_CREDENTIALS_FILE: /run/secrets/vocab-ai/credentials.json
+      VOCAB_DB: /data/vocab.db
+      VOCAB_DATA_FOLDER: /app/data/seed
+      VOCAB_INCLUDE_SUBFOLDERS: "${VOCAB_INCLUDE_SUBFOLDERS:-false}"
+      VOCAB_SEED_FROM_FOLDER_WHEN_EMPTY: "${VOCAB_SEED_FROM_FOLDER_WHEN_EMPTY:-true}"
+      VOCAB_PAGE_SIZE: "${VOCAB_PAGE_SIZE:-12}"
+      VOCAB_MAX_PAGE_SIZE: "${VOCAB_MAX_PAGE_SIZE:-100}"
+      VOCAB_MAX_IMPORT_BYTES: "${VOCAB_MAX_IMPORT_BYTES:-5242880}"
+      VOCAB_MAX_BACKUP_BYTES: "${VOCAB_MAX_BACKUP_BYTES:-67108864}"
+      VOCAB_TRUST_PROXY: "${VOCAB_TRUST_PROXY:-1}"
+      AI_TIMEOUT_MS: "${AI_TIMEOUT_MS:-90000}"
+      AI_CATALOG_TTL_MS: "${AI_CATALOG_TTL_MS:-300000}"
+      AI_CATALOG_TIMEOUT_MS: "${AI_CATALOG_TIMEOUT_MS:-10000}"
+      AI_MAX_TERMS: "${AI_MAX_TERMS:-10}"
+    ports:
+      - "${VOCAB_BIND_ADDRESS:-127.0.0.1}:${VOCAB_PORT:-3000}:3000"
+    volumes:
+      - vocab-data:/data
+      - "${AI_SECRETS_DIR:?Define AI_SECRETS_DIR en .env}:/run/secrets/vocab-ai:ro"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 20s
+
+volumes:
+  vocab-data:
