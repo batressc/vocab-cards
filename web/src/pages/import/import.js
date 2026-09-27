@@ -153,7 +153,7 @@ function renderAiDefaultSettings(){
   const preferred = resolveAiDefaultModel(info);
   const current = findAiModel(info, preferred);
   const providers = Array.isArray(info.providers) ? info.providers : [];
-  reconcileExpanded('default', providers, [preferred?.provider || providers[0]?.id].filter(Boolean));
+  reconcileExpanded('default', providers, preferred ? [preferred.provider] : []);
   panel.hidden = false;
   const fetched = info.fetchedAt ? fmtDateTime(info.fetchedAt) : '';
   $('#aiCatalogStatus').textContent = info.stale
@@ -192,7 +192,7 @@ function renderAiDefaultSettings(){
 
 function renderFullCatalog(){
   const providers = state.info.ai?.allProviders || [];
-  reconcileExpanded('catalog', providers, [providers[0]?.id].filter(Boolean));
+  reconcileExpanded('catalog', providers, []);
   $('#aiCatalogModels').innerHTML = providers.length ? providers.map(provider => accordion(provider, `
     <div class="provider-actions"><button class="btn provider-select-all" type="button" data-provider-select-all="${esc(provider.id)}"></button></div>
     <div class="catalog-models">${provider.models.map(model => {

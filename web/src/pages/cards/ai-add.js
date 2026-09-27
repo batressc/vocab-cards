@@ -125,7 +125,7 @@ function renderModelPicker(){
         return `<div class="ai-model-option">
           <label><input type="radio" name="ai-model" value="${esc(model.id)}" data-provider="${esc(provider.id)}"${selected ? ' checked' : ''}> <span><b>${esc(model.label)}</b><small>${esc(provider.label)}${model.group ? ` · ${esc(model.group)}` : ''}</small></span></label>
           <span class="model-category category-${esc(model.category)}">${esc(AI_CATEGORY_LABELS[model.category] || AI_CATEGORY_LABELS.unclassified)}</span>
-          <span class="ai-model-default" title="${preferred ? 'Predeterminado global' : 'Selección temporal'}">${preferred ? star : ''}<span class="sr-only">${preferred ? 'Predeterminado global' : ''}</span></span>
+          <span class="ai-model-default">${preferred ? star : ''}</span>
         </div>`;
       }).join('')}
       ${provider.stale ? '<p class="ai-model-warning">Último catálogo disponible.</p>' : ''}
