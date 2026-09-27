@@ -1,18 +1,12 @@
 /* Página de tarjetas: filtros, orden, scroll infinito, voz y acciones sobre tarjetas. */
-import { $, esc, store, fmtDate, fmtDateTime, toast, ADMIN_TOKEN_KEY } from '../../shared/utils.js';
+import { $, esc, store, fmtDateTime, toast, ADMIN_TOKEN_KEY } from '../../shared/utils.js';
+import { cardHTML, flip, initKnown, known, setAdminUnlocked, KINDS, safeKey } from '../../shared/card.js';
+export { cardHTML, flip };
 
 /* ================= Configuración del cliente ================= */
 // Rutas relativas: funciona igual en la raíz del dominio o en un subdirectorio (IIS, proxy).
 const API = 'api/vocab';
 
-const KINDS = {
-  phrasal:      { label:'Phrasal verb', plural:'Phrasal verbs' },
-  idiom:        { label:'Modismo',      plural:'Modismos' },
-  phrase:       { label:'Frase',        plural:'Frases' },
-  onomatopoeia: { label:'Onomatopeya',  plural:'Onomatopeyas' },
-  word:         { label:'Palabra',      plural:'Palabras' },
-  grammar:      { label:'Estructura',   plural:'Estructuras' }
-};
 const LEVEL_NAMES = { A1:'Principiante', A2:'Básico', B1:'Intermedio', B2:'Intermedio alto', C1:'Avanzado', C2:'Maestría' };
 const SORTS = {
   added:  { label:'Fecha de adición', short:'Fecha',     def:'desc', asc:'Más antiguas primero',   desc:'Más recientes primero',  ascS:'más antiguas',  descS:'más recientes' },
@@ -24,7 +18,6 @@ const SORTS = {
 };
 
 /* ================= Utilidades locales ================= */
-const safeKey = k => /^[a-z0-9-]+$/i.test(k) ? k : 'x';
 const newSeed = () => Math.floor(Math.random() * 2147483647);
 
 export async function api(path, options = {}){
@@ -41,7 +34,7 @@ export async function api(path, options = {}){
 }
 
 /* ================= Estado ================= */
-let known = new Set(store.get('vocab-known', []));
+initKnown(store.get('vocab-known', []));
 const exLevels = new Set(store.get('vocab-ex-levels', []));   // niveles desmarcados
 const exKinds  = new Set(store.get('vocab-ex-kinds', []));    // tipos desmarcados
 let sortState = { by:'added', dir:'desc', seed:0, ...store.get('vocab-sort', {}) };
@@ -54,73 +47,10 @@ const feed = { gen:0, skip:0, total:0, shown:0, loading:false, done:false, error
 const grid = $('#grid');
 
 /* ================= Iconos ================= */
-const ICON_SPEAK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
-const ICON_SLOW = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/></svg>';
-const ICON_FLIP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg>';
-const ICON_CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>';
 const ICON_CARET = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
 /* ================= Tarjetas ================= */
-function latHTML(s){
-  if (!s) return '';
-  return s.split('-').map(p => {
-    const stressed = p === p.toUpperCase() && /[A-ZÁÉÍÓÚÑ]/.test(p);
-    return stressed ? `<b>${esc(p)}</b>` : esc(p);
-  }).join('<span class="sep">-</span>');
-}
-const sayBtn = (text, label) => `<button type="button" class="icon-btn" data-say="${esc(text)}" aria-label="Escuchar: ${esc(label || text)}">${ICON_SPEAK}</button>`;
-
-export function cardHTML(d){
-  const kind = KINDS[d.kind] || { label: d.kind };
-  const kKey = safeKey(d.kind);
-  const say = d.say || d.head;
-  const tags = `<span class="tag kind">${esc(kind.label)}</span>` + (d.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
-  const isKnown = known.has(d.id);
-  const contexts = d.contexts || [], forms = d.forms || [], examples = d.examples || [], related = d.related || [];
-
-  return `
-  <article class="card${isKnown ? ' is-known' : ''}" data-id="${esc(d.id)}" style="--k:var(--k-${kKey}, var(--muted))">
-    <div class="inner">
-      <section class="face front" aria-label="${esc(d.head)}">
-        <div class="meta">${tags}${d.level ? `<span class="level" title="Nivel MCER">${esc(d.level)}</span>` : ''}
-          <button type="button" class="known" aria-pressed="${isKnown}" aria-label="Marcar ${esc(d.head)} como aprendida" title="Ya la sé"${d.level ? '' : ' style="margin-left:auto"'}>${ICON_CHECK}</button>
-        </div>
-        <h2 class="head">${esc(d.head)}</h2>
-        ${d.ipa || d.lat ? `<dl class="pron">
-          ${d.ipa ? `<dt>EE. UU.</dt><dd class="ipa">${esc(d.ipa)}</dd>` : ''}
-          ${d.lat ? `<dt>Latino</dt><dd class="lat">${latHTML(d.lat)}</dd>` : ''}
-        </dl>` : ''}
-        <div class="audio">
-          <button type="button" class="play" data-say="${esc(say)}">${ICON_SPEAK}Escuchar</button>
-          <button type="button" class="play" data-say="${esc(say)}" data-rate="0.55">${ICON_SLOW}Lento</button>
-        </div>
-        <p class="meaning">${esc(d.meaning)}</p>
-        ${d.ex ? `<div class="ex">${sayBtn(d.ex.en, 'ejemplo')}<p><span class="en">${esc(d.ex.en)}</span><span class="es">${esc(d.ex.es)}</span></p></div>` : ''}
-        <button type="button" class="flip" data-flip>${ICON_FLIP}Contextos y más ejemplos</button>
-      </section>
-
-      <section class="face back" aria-label="Detalles de ${esc(d.head)}" inert>
-        <div class="meta"><span class="tag kind">${esc(kind.label)}</span>
-          <h2 class="head">${esc(d.head)}</h2>${sayBtn(say, d.head)}
-        </div>
-        <p class="meaning">${esc(d.meaning)}</p>
-        ${contexts.length ? `<div class="sec"><h3>${contexts.length > 1 ? 'Contextos de uso' : 'Contexto de uso'}</h3>
-          <ul class="ctx">${contexts.map(c => `<li><b>${esc(c.title)}:</b> ${esc(c.text)}</li>`).join('')}</ul></div>` : ''}
-        ${forms.length ? `<div class="sec"><h3>${esc(d.formsLabel || 'Formas')}</h3>
-          <ul class="forms">${forms.map(f => `<li>${esc(f)}</li>`).join('')}</ul></div>` : ''}
-        ${examples.length ? `<div class="sec"><h3>Otros ejemplos</h3>
-          <ul class="exs">${examples.map(e => `<li>${sayBtn(e.en, 'ejemplo')}<p><span class="en">${esc(e.en)}</span><span class="es">${esc(e.es)}</span></p></li>`).join('')}</ul></div>` : ''}
-        ${d.note ? `<p class="note">${esc(d.note)}</p>` : ''}
-        ${related.length ? `<p class="rel">Relacionadas: <span>${related.map(esc).join(', ')}</span></p>` : ''}
-        ${d.addedAt ? `<p class="added">Agregada el ${esc(fmtDate(d.addedAt))}${d.source ? `, en ${esc(d.source)}` : ''}</p>` : ''}
-        <div class="back-actions">
-          <button type="button" class="flip" data-flip>${ICON_FLIP}Volver</button>
-          ${adminUnlocked ? `<span class="admin-card-actions"><a class="edit" href="import.html#entries/${encodeURIComponent(d.id)}">Editar</a><button type="button" class="del" data-del aria-label="Eliminar ${esc(d.head)}">Eliminar</button></span>` : ''}
-        </div>
-      </section>
-    </div>
-  </article>`;
-}
+// cardHTML() y flip() viven en ../../shared/card.js (se re-exportan arriba).
 
 /* ================= Popover compartido ================= */
 function wirePopover(root){
@@ -379,11 +309,16 @@ export async function authed(path, options = {}, base = API){
 
 export const isAdminUnlocked = () => adminUnlocked;
 
+function setAdminButton(unlocked){
+  $('#adminUnlock').setAttribute('aria-pressed', String(unlocked));
+  $('#adminUnlock').textContent = unlocked ? 'Administración desbloqueada' : 'Desbloquear administración';
+}
+
 function lockAdmin(){
   adminUnlocked = false;
+  setAdminUnlocked(false);
   store.set(ADMIN_TOKEN_KEY, '');
-  $('#adminUnlock').setAttribute('aria-pressed', 'false');
-  $('#adminUnlock').textContent = 'Desbloquear administración';
+  setAdminButton(false);
   resetFeed();
 }
 
@@ -401,12 +336,28 @@ async function unlockAdmin(){
     }
     store.set(ADMIN_TOKEN_KEY, token);
     adminUnlocked = true;
-    $('#adminUnlock').setAttribute('aria-pressed', 'true');
-    $('#adminUnlock').textContent = 'Administración desbloqueada';
+    setAdminUnlocked(true);
+    setAdminButton(true);
     resetFeed();
   } catch {
     toast('No se pudo conectar con el servidor para validar la clave.');
   }
+}
+
+// Al abrir la página se revalida el token guardado; no bloquea el render de tarjetas.
+async function restoreAdminFromToken(){
+  const token = store.get(ADMIN_TOKEN_KEY, '');
+  if (!token) return;
+  let res;
+  try {
+    res = await fetch('api/admin/check', { headers:{ Accept:'application/json', Authorization:`Bearer ${token}` } });
+  } catch {
+    return; // sin conexión: se conserva el token y se mantiene bloqueado
+  }
+  if (!res.ok) { lockAdmin(); return; }
+  adminUnlocked = true;
+  setAdminUnlocked(true);
+  setAdminButton(true);
 }
 
 $('#adminUnlock').addEventListener('click', () => adminUnlocked ? lockAdmin() : unlockAdmin());
@@ -458,12 +409,6 @@ if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
 $('#voiceSel').addEventListener('change', e => store.set('vocab-voice', e.target.value));
 
 /* ================= Interacción con tarjetas ================= */
-export function flip(card){
-  const flipped = card.classList.toggle('flipped');
-  const [front, back] = card.querySelectorAll('.face');
-  front.inert = flipped; back.inert = !flipped;
-  (flipped ? back : front).querySelector('[data-flip]').focus({ preventScroll:true });
-}
 grid.addEventListener('click', e => {
   const card = e.target.closest('.card'); if (!card) return;
   const s = e.target.closest('[data-say]');
@@ -501,7 +446,9 @@ if (store.get('vocab-practice', false)) { $('#practice').checked = true; documen
 
 /* ================= Arranque ================= */
 (async () => {
-  try { applyMeta(await api('meta')); }
-  catch (err) { $('#sourceInfo').textContent = `No se pudo conectar con el servidor. ${err.message || ''}`; }
+  // La validación del token guardado corre en paralelo con los metadatos y no retrasa el render.
+  const [m] = await Promise.allSettled([api('meta'), restoreAdminFromToken()]);
+  if (m.status === 'fulfilled') applyMeta(m.value);
+  else $('#sourceInfo').textContent = `No se pudo conectar con el servidor. ${m.reason?.message || ''}`;
   resetFeed();
 })();

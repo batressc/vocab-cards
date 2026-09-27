@@ -5,8 +5,12 @@ import {
   $, esc, store, fmtDateTime, plural, toast, findAiModel, resolveAiDefaultModel,
   ADMIN_TOKEN_KEY, OPENCODE_SESSION_LIMIT_KEY, AI_CATEGORY_LABELS
 } from '../../shared/utils.js';
+import { cardHTML, flip, initKnown } from '../../shared/card.js';
 
 const fmtSize = b => b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+
+// Las tarjetas del editor muestran el estado de "ya la sé" de la página principal.
+initKnown(store.get('vocab-known', []));
 
 const STATUS = {
   new:       'Nueva',
@@ -477,7 +481,7 @@ async function openEntry(id){
     $('#entryEditor').hidden = false;
     $('#entryEditorCurrent').textContent = `${entry.head} · ${entry.id}`;
     $('#entryInstructions').value = '';
-    $('#entryPreview').innerHTML = '';
+    $('#entryPreview').innerHTML = `<h3>Actual</h3>${cardHTML(entry, { admin:false })}`;
     $('#entryPreviewActions').hidden = true;
     renderEntryModels(true);
     selectAdminTab('entries');
@@ -500,6 +504,26 @@ $('#entrySearch').addEventListener('input', e => {
 $('#entryPrev').addEventListener('click', () => { state.entries.skip = Math.max(0, state.entries.skip - state.entries.take); loadEntries(); });
 $('#entryNext').addEventListener('click', () => { state.entries.skip += state.entries.take; loadEntries(); });
 
+/* ================= Previsualizaciones de tarjeta ================= */
+// Las tarjetas del editor (actual y nueva versión) se voltean y se escuchan aquí.
+const previewSynth = window.speechSynthesis;
+function speakPreview(text, rate, btn){
+  if (!previewSynth) { toast('Este navegador no tiene síntesis de voz.'); return; }
+  previewSynth.cancel();
+  document.querySelectorAll('.speaking').forEach(b => b.classList.remove('speaking'));
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US'; u.rate = rate || 0.95;
+  if (btn) { btn.classList.add('speaking'); u.onend = u.onerror = () => btn.classList.remove('speaking'); }
+  previewSynth.speak(u);
+}
+
+$('#entryPreview').addEventListener('click', e => {
+  const card = e.target.closest('.card'); if (!card) return;
+  const s = e.target.closest('[data-say]');
+  if (s) { speakPreview(s.dataset.say, parseFloat(s.dataset.rate) || 0.95, s); return; }
+  if (e.target.closest('[data-flip]') || !e.target.closest('button, a, input, select, label')) flip(card);
+});
+
 function setEntryBusy(busy){
   state.busy = busy;
   for (const control of $('#entryEditor').querySelectorAll('button, textarea, select')) control.disabled = busy;
@@ -521,9 +545,9 @@ async function generateEntryEdit(){
     }) });
     const candidate = result.items[0].entry;
     state.entries.preview = { entry:candidate, source:result.source };
-    $('#entryPreview').innerHTML = `<h3>Vista previa</h3><div class="entry-preview-card">
-      <strong>${esc(candidate.head)}</strong><span>${esc(candidate.meaning || 'Sin significado')}</span>
-      <dl><dt>Id</dt><dd>${esc(candidate.id)}</dd><dt>Tipo y nivel</dt><dd>${esc(KIND_LABEL[candidate.kind] || candidate.kind)} · ${esc(candidate.level || 'Sin nivel')}</dd><dt>Ejemplo</dt><dd>${esc(candidate.ex?.en || 'Sin ejemplo')}</dd></dl>
+    $('#entryPreview').innerHTML = `<div class="compare-grid">
+      <section class="compare-col"><h3>Actual</h3>${cardHTML(state.entries.selected, { admin:false })}</section>
+      <section class="compare-col"><h3>Nueva versión</h3>${cardHTML(candidate, { admin:false })}</section>
     </div><p class="hint">Generado con ${esc(result.label)} (${esc(result.model)}).</p>`;
     $('#entryPreviewActions').hidden = false;
     $('#entrySave').focus();

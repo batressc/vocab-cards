@@ -189,7 +189,7 @@ function renderPreview(r){
     html += `<p class="ai-status">${status}</p>`;
     if (it.message) html += `<p class="ai-warn">Aviso: ${esc(it.message)}</p>`;
     if (valid.length > 1) html += `<p class="ai-warn">La IA devolvió ${valid.length} tarjetas; se guardarán todas.</p>`;
-    html += `<div class="ai-preview">${valid.map(v => cardHTML(v.entry)).join('')}</div>`;
+    html += `<div class="ai-preview">${valid.map(v => cardHTML(v.entry, { admin:false })).join('')}</div>`;
   }
   html += `<p class="ai-meta">Generado con ${esc(r.label)} (${esc(r.model)}).</p>`;
   $('#aiBody').innerHTML = html;
