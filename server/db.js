@@ -108,6 +108,61 @@ const MIGRATIONS = [
   `
 ];
 
+export const DATABASE_SCHEMA_VERSION = MIGRATIONS.length;
+const REQUIRED_TABLES = Object.freeze([
+  'entries', 'imports', 'ai_model_preferences', 'ai_settings', 'app_state',
+  'usage_events', 'learning_state', 'ai_generations', 'admin_audit'
+]);
+const REQUIRED_COLUMNS = Object.freeze({
+  entries:['seq', 'id', 'data', 'added_at', 'updated_at', 'source'],
+  imports:['id', 'created_at', 'origin', 'sources', 'mode', 'inserted', 'updated', 'unchanged', 'skipped', 'errors'],
+  ai_model_preferences:['provider', 'model', 'visible', 'category'],
+  ai_settings:['id', 'default_provider', 'default_model'],
+  app_state:['id', 'suppress_seed_when_empty', 'data_epoch'],
+  usage_events:['id', 'created_at', 'client_id', 'session_id', 'event_type', 'entry_id', 'term', 'result_count', 'value'],
+  learning_state:['client_id', 'entry_id', 'known', 'updated_at'],
+  ai_generations:['id', 'created_at', 'operation', 'provider', 'model', 'term', 'entry_id', 'outcome', 'duration_ms', 'item_count', 'valid_count', 'saved_count', 'saved_at'],
+  admin_audit:['id', 'created_at', 'action', 'detail']
+});
+
+/** Valida un respaldo sin ejecutar migraciones ni modificar el archivo recibido. */
+export function validateBackupDatabase(path) {
+  let db;
+  try {
+    db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
+    const integrity = db.prepare('PRAGMA integrity_check').all();
+    if (integrity.length !== 1 || integrity[0].integrity_check !== 'ok') {
+      throw new TypeError('El archivo SQLite no superó la comprobación de integridad.');
+    }
+
+    const version = db.prepare('PRAGMA user_version').get().user_version;
+    if (version !== DATABASE_SCHEMA_VERSION) {
+      throw new TypeError(`El respaldo usa la versión de esquema ${version}; se requiere la versión ${DATABASE_SCHEMA_VERSION}.`);
+    }
+
+    const placeholders = REQUIRED_TABLES.map(() => '?').join(', ');
+    const tables = new Set(db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`).all(...REQUIRED_TABLES).map(row => row.name));
+    if (tables.size !== REQUIRED_TABLES.length) {
+      throw new TypeError('El archivo no contiene el esquema completo de Vocab Cards.');
+    }
+    for (const [table, columns] of Object.entries(REQUIRED_COLUMNS)) {
+      const actual = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
+      if (!columns.every(column => actual.has(column))) {
+        throw new TypeError('El archivo no contiene el esquema completo de Vocab Cards.');
+      }
+    }
+    if (!db.prepare('SELECT 1 FROM app_state WHERE id = 1').get()) {
+      throw new TypeError('El archivo no contiene el estado interno requerido.');
+    }
+    return { version };
+  } catch (err) {
+    if (err instanceof TypeError) throw err;
+    throw new TypeError('El archivo no es un respaldo SQLite válido de Vocab Cards.');
+  } finally {
+    try { db?.close(); } catch {}
+  }
+}
+
 export function openDatabase(path) {
   mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
@@ -127,7 +182,7 @@ export function openDatabase(path) {
   };
 
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  for (let v = version; v < MIGRATIONS.length; v++) {
+  for (let v = version; v < DATABASE_SCHEMA_VERSION; v++) {
     transaction(() => {
       db.exec(MIGRATIONS[v]);
       db.exec(`PRAGMA user_version = ${v + 1}`);

@@ -12,6 +12,7 @@ const DEFAULTS = {
   pageSize: 12,
   maxPageSize: 100,
   maxImportBytes: 5 * 1024 * 1024,
+  maxBackupBytes: 64 * 1024 * 1024,
   trustProxy: false,
   host: '0.0.0.0',
   port: 3000
@@ -54,6 +55,7 @@ export async function loadConfig() {
     pageSize: int(env.VOCAB_PAGE_SIZE ?? c.pageSize, 12, 1, 200),
     maxPageSize: int(c.maxPageSize, 100, 1, 1000),
     maxImportBytes: int(c.maxImportBytes, DEFAULTS.maxImportBytes, 1024, 50 * 1024 * 1024),
+    maxBackupBytes: int(c.maxBackupBytes, DEFAULTS.maxBackupBytes, 1024 * 1024, 512 * 1024 * 1024),
     trustProxy: c.trustProxy ?? false,
     ai: c.ai && typeof c.ai === 'object' ? c.ai : {},
     host: String(env.HOST || c.host),

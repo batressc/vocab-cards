@@ -31,3 +31,13 @@ test('las rutas de editar y eliminar permanecen detrás de autenticación Bearer
   assert.ok(source.indexOf("admin.delete('/entries/:id'", guard) > guard);
   assert.match(source, /vocab\.delete\('\/entries\/:id', writeLimiter, auth\.require/);
 });
+
+test('las rutas de respaldo completo usan la administración autenticada y el limitador de mantenimiento', () => {
+  const source = readFileSync(new URL('../index.js', import.meta.url), 'utf8');
+  const guard = source.indexOf("admin.use(writeLimiter, auth.require)");
+  const download = source.indexOf("admin.get('/backup', maintenanceLimiter", guard);
+  const restore = source.indexOf("admin.post('/backup/restore', maintenanceLimiter", guard);
+  assert.ok(download > guard, 'la descarga queda detrás del middleware administrativo');
+  assert.ok(restore > guard, 'la restauración queda detrás del middleware administrativo');
+  assert.match(source, /x-backup-confirmation.*RESTORE_CONFIRMATION/);
+});

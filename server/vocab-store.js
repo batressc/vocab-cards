@@ -1,5 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
+import { existsSync, renameSync, rmSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { backup } from 'node:sqlite';
 import { openDatabase } from './db.js';
 import { LEVEL_ORDER, KIND_ORDER, fold, slug, normalizeEntry, hydrate } from './entry.js';
 import { parseLenientJson, jsonErrorLine, extractJsonBlocks } from './lenient-json.js';
@@ -35,18 +37,109 @@ function mix(seed, id) {
  * refresca la copia en memoria.
  */
 export class VocabStore {
-  #db; #sql; #transaction;
+  #db; #sql; #transaction; #dbPath;
+  #backupDatabase; #fileOps;
+  #backupRestoreQueue = Promise.resolve();
   #entries = [];
   #byId = new Map();      // id en minúsculas → entrada hidratada
   #stored = new Map();    // id en minúsculas → JSON guardado (para detectar cambios)
   #lastUpdated = null;
 
-  constructor(dbPath) {
-    ({ db: this.#db, sql: this.#sql, transaction: this.#transaction } = openDatabase(dbPath));
-    this.refresh();
+  constructor(dbPath, { backupDatabase = backup, fileOps = {} } = {}) {
+    this.#dbPath = dbPath;
+    this.#backupDatabase = backupDatabase;
+    this.#fileOps = { existsSync, renameSync, rmSync, ...fileOps };
+    this.#open();
   }
 
   close() { this.#db.close(); }
+
+  #open() {
+    ({ db: this.#db, sql: this.#sql, transaction: this.#transaction } = openDatabase(this.#dbPath));
+    this.refresh();
+  }
+
+  #serializeBackupOperation(operation) {
+    const result = this.#backupRestoreQueue.then(operation);
+    this.#backupRestoreQueue = result.catch(() => {});
+    return result;
+  }
+
+  /** Crea un punto consistente aun cuando la conexión siga atendiendo lecturas. */
+  backup(path) {
+    return this.#serializeBackupOperation(() => this.#backupDatabase(this.#db, path));
+  }
+
+  /**
+   * Reemplaza una base ya validada. La conexión se cierra antes de tocar el
+   * archivo y el original se conserva para volver atrás si no puede reabrirse.
+   */
+  restoreBackup(path) {
+    return this.#serializeBackupOperation(() => this.#restoreBackup(path));
+  }
+
+  #restoreBackup(path) {
+    const previous = `${this.#dbPath}.restore-previous`;
+    const { existsSync, renameSync, rmSync } = this.#fileOps;
+    let connectionClosed = false;
+    let originalMoved = false;
+    let backupMoved = false;
+    try {
+      this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+      this.close();
+      connectionClosed = true;
+      rmSync(previous, { force: true });
+      renameSync(this.#dbPath, previous);
+      originalMoved = true;
+      rmSync(`${this.#dbPath}-wal`, { force: true });
+      rmSync(`${this.#dbPath}-shm`, { force: true });
+      renameSync(path, this.#dbPath);
+      backupMoved = true;
+      this.#open();
+      connectionClosed = false;
+      try { rmSync(previous, { force: true }); } catch {}
+    } catch (activationError) {
+      if (!connectionClosed) {
+        throw new Error('No se pudo preparar la restauración. La base de datos anterior sigue activa.', { cause: activationError });
+      }
+
+      try { this.close(); } catch {}
+      const rollbackErrors = [];
+      if (backupMoved && existsSync(this.#dbPath)) {
+        try { rmSync(this.#dbPath, { force: true }); }
+        catch (error) { rollbackErrors.push(error); }
+      }
+
+      let originalRestored = !originalMoved && existsSync(this.#dbPath);
+      if (originalMoved) {
+        try {
+          renameSync(previous, this.#dbPath);
+          originalRestored = true;
+        } catch (error) {
+          rollbackErrors.push(error);
+        }
+      }
+
+      if (!originalRestored || !existsSync(this.#dbPath)) {
+        const error = new Error('La restauración falló y el rollback no pudo devolver la base de datos anterior a su ubicación. El acceso a datos queda cerrado para evitar crear una base vacía.', {
+          cause: new AggregateError([activationError, ...rollbackErrors], 'Falló la activación y el rollback del respaldo.')
+        });
+        error.code = 'RESTORE_ROLLBACK_FAILED';
+        throw error;
+      }
+
+      try {
+        this.#open();
+      } catch (rollbackError) {
+        const error = new Error('La restauración falló y no se pudo reabrir la base de datos anterior confirmada. El acceso a datos queda cerrado.', {
+          cause: new AggregateError([activationError, ...rollbackErrors, rollbackError], 'Falló la activación o reapertura del respaldo anterior.')
+        });
+        error.code = 'RESTORE_ROLLBACK_FAILED';
+        throw error;
+      }
+      throw new Error('No se pudo activar el respaldo. La base de datos anterior sigue activa.', { cause: activationError });
+    }
+  }
 
   refresh() {
     const rows = this.#sql.all.all();

@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { VocabStore } from '../vocab-store.js';
 
 /** Crea un almacén sobre una base de datos temporal y devuelve una función para limpiarlo. */
-export function tempStore() {
+export function tempStore(options) {
   const dir = mkdtempSync(join(tmpdir(), 'vocab-test-'));
   const path = join(dir, 'test.db');
-  const store = new VocabStore(path);
+  const store = new VocabStore(path, options);
   return { store, path, cleanup: () => { try { store.close(); } catch {} rmSync(dir, { recursive: true, force: true }); } };
 }
 

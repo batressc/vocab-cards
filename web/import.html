@@ -185,21 +185,29 @@
     </div>
       </section>
 
-  <!-- Respaldo e historial -->
+      <!-- Exportación lógica e historial -->
       <section class="panel" id="extraPanel" aria-labelledby="historyTitle">
-    <div class="extra-head">
-      <h2 id="historyTitle">Últimas importaciones</h2>
-      <a class="btn" href="api/vocab/export" download>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg>
-        Descargar respaldo JSON
-      </a>
-    </div>
-    <div class="table-wrap">
-      <table class="results history">
-        <thead><tr><th scope="col">Fecha</th><th scope="col">Origen</th><th scope="col">Nuevas</th><th scope="col">Actualizadas</th><th scope="col">Sin cambios</th><th scope="col">Omitidas</th><th scope="col">Errores</th></tr></thead>
-        <tbody id="historyRows"></tbody>
-      </table>
-    </div>
+        <div class="extra-head">
+          <h2 id="historyTitle">Últimas importaciones</h2>
+          <a class="btn" href="api/vocab/export" download>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg>
+            Exportar tarjetas JSON
+          </a>
+        </div>
+        <p class="hint">Esta exportación contiene solo tarjetas y se puede volver a importar o mezclar. No restaura métricas, auditoría ni ajustes de IA.</p>
+        <div class="table-wrap">
+          <table class="results history">
+            <thead><tr><th scope="col">Fecha</th><th scope="col">Origen</th><th scope="col">Nuevas</th><th scope="col">Actualizadas</th><th scope="col">Sin cambios</th><th scope="col">Omitidas</th><th scope="col">Errores</th></tr></thead>
+            <tbody id="historyRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel database-backup" aria-labelledby="databaseBackupTitle">
+        <div class="extra-head"><h2 id="databaseBackupTitle">Respaldo completo de la base de datos</h2><button type="button" class="btn" id="databaseBackupDownload">Descargar archivo SQLite</button></div>
+        <p class="section-intro">Incluye tarjetas, historial, métricas, estados de aprendizaje y configuración guardada. Restaurarlo reemplaza por completo la base de datos actual.</p>
+        <label class="backup-upload" for="databaseBackupFile"><span>Archivo SQLite para restaurar</span><input id="databaseBackupFile" type="file" accept=".sqlite,application/vnd.sqlite3,application/octet-stream"><small id="databaseBackupLimit"></small></label>
+        <div class="actions"><button type="button" class="btn danger" id="databaseBackupRestore" disabled>Restaurar respaldo completo</button><p class="hint" id="databaseBackupStatus" aria-live="polite"></p></div>
       </section>
     </section>
 
@@ -278,6 +286,17 @@
     </label>
     <p class="hint" id="maintenanceDialogStatus" aria-live="polite"></p>
     <div class="actions"><button class="btn" value="cancel">Cancelar</button><button class="btn danger" id="maintenanceConfirm" type="submit" value="confirm" disabled>Confirmar limpieza</button></div>
+  </form>
+</dialog>
+<dialog class="maintenance-dialog" id="backupRestoreDialog" aria-labelledby="backupRestoreDialogTitle">
+  <form method="dialog" id="backupRestoreForm">
+    <h2 id="backupRestoreDialogTitle">Restaurar respaldo completo</h2>
+    <p id="backupRestoreDialogText"></p>
+    <label for="backupRestoreConfirmation">Escribe <strong>RESTAURAR BASE DE DATOS</strong> para confirmar
+      <input id="backupRestoreConfirmation" autocomplete="off" spellcheck="false">
+    </label>
+    <p class="hint" id="backupRestoreDialogStatus" aria-live="polite"></p>
+    <div class="actions"><button class="btn" value="cancel">Cancelar</button><button class="btn danger" id="backupRestoreConfirm" type="submit" value="confirm" disabled>Restaurar y recargar</button></div>
   </form>
 </dialog>
 <div class="toast" id="toast" role="status"></div>

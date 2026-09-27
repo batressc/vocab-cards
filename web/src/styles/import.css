@@ -180,6 +180,10 @@ textarea{width:100%;min-height:260px;resize:vertical;background:var(--soft);bord
 .done{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:color-mix(in srgb,var(--ok) 10%,var(--card));border:1px solid color-mix(in srgb,var(--ok) 40%,var(--line));border-radius:10px;padding:10px 12px;margin-bottom:12px}
 .extra-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .extra-head h2{margin:0}
+.database-backup{border-color:color-mix(in srgb,var(--warn) 45%,var(--line))}
+.backup-upload{display:grid;gap:5px;margin-top:14px;color:var(--muted);font-size:13px;font-weight:700}
+.backup-upload input{max-width:100%;color:var(--ink);font-weight:400}
+.backup-upload small{font-weight:400}
 
 .statistics-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .statistics-head h2{margin:0}

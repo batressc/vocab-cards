@@ -11,6 +11,7 @@ Otras funciones:
 - **Agregar tarjetas:** pegar el JSON que genera una IA, subir archivos o crearlas con IA directamente desde la búsqueda.
 - **Administrar tarjetas:** buscar, paginar, regenerar con instrucciones y proveedor/modelo explícitos, previsualizar, renombrar o eliminar.
 - **Medir y mantener:** estadísticas anónimas de estudio y generaciones IA, más limpiezas administrativas separadas para tarjetas, auditoría, métricas o todo el estado gestionado.
+- **Respaldar y restaurar:** copias SQLite completas, consistentes y protegidas por la clave administrativa; la restauración recupera todo el estado de la aplicación.
 
 ## Tecnologías
 
@@ -74,6 +75,7 @@ secretos van en `.env`, que Git ignora.
 | `seedFromFolderWhenEmpty` | `true` | Importar `dataFolder` si la base está vacía al arrancar. |
 | `pageSize` / `maxPageSize` | `12` / `100` | Tamaño de página del scroll infinito. |
 | `maxImportBytes` | 5 MB | Tamaño máximo por archivo o texto importado. |
+| `maxBackupBytes` | 64 MB | Tamaño máximo de un archivo SQLite subido para restaurar. |
 | `trustProxy` | `false` | Pon `1` detrás de Nginx o IIS. |
 | `host` / `port` | `0.0.0.0` / `3000` | Dónde escucha el servidor. |
 | `ai.provider` | `opencode-go` | Proveedor heredado; la selección operativa se administra globalmente desde la interfaz. |
@@ -242,5 +244,17 @@ Pon Nginx o IIS (ARR) delante para HTTPS y ajusta `trustProxy`. Define
 `ADMIN_TOKEN` antes de publicar: la clave viaja en cada petición de escritura.
 El frontend usa rutas relativas, así que también funciona en un subdirectorio.
 
-**Respaldos:** usa **Agregar tarjetas → Descargar respaldo JSON** (se puede
-volver a importar) o `sqlite3 data/vocab.db ".backup copia.db"`.
+**Respaldos:** en **Administración → Carga de datos**, **Exportar tarjetas JSON**
+solo descarga las tarjetas y sirve para importarlas o mezclarlas con otras. Para
+un punto de restauración completo usa **Descargar archivo SQLite**: incluye
+tarjetas, importaciones, auditoría, métricas, estados de aprendizaje y ajustes
+de IA. La descarga se crea con la copia consistente de SQLite mientras el
+servidor sigue atendiendo solicitudes.
+
+Para restaurar, sube exclusivamente uno de esos archivos SQLite, escribe
+`RESTAURAR BASE DE DATOS` y confirma. El servidor comprueba integridad,
+versión y tablas requeridas antes de cerrar la conexión actual. Solo después
+activa el archivo validado, reabre la base y reconstruye la caché; si falla el
+relevo conserva y reactiva la base anterior. La restauración reemplaza todo el
+estado actual y recarga el navegador. No restaura `.env`, `config.json`,
+`data/seed` ni archivos fuera de `dbPath`.

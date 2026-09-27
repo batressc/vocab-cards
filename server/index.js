@@ -1,7 +1,9 @@
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { ROOT, loadConfig } from './config.js';
 import { VocabStore, normalizeGenerationId, readFolderSources } from './vocab-store.js';
 import { createAuth } from './auth.js';
@@ -9,6 +11,7 @@ import { publicAiInfo, OPENCODE_SESSION_LIMIT } from './ai.js';
 import { aiModelCatalog } from './ai-models.js';
 import { generatePreview } from './ai-workflow.js';
 import { normalizeTelemetryBatch } from './telemetry.js';
+import { validateBackupDatabase } from './db.js';
 
 // --dev: Vite sirve el frontend con recarga en caliente. Sin --dev: se sirve dist/ (npm run build).
 const DEV = process.argv.includes('--dev');
@@ -29,6 +32,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', boot.trustProxy);
 
 const json = limit => express.json({ limit });
+const binary = limit => express.raw({ type: ['application/vnd.sqlite3', 'application/octet-stream'], limit });
 const writeLimiter = rateLimit({
   windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
   message: { error: 'Demasiadas operaciones seguidas; espera un minuto.' }
@@ -87,6 +91,7 @@ admin.get('/check', async (req, res) => {
     total: store.size,
     dataFolder: cfg.dataFolderSetting,
     maxImportBytes: cfg.maxImportBytes,
+    maxBackupBytes: cfg.maxBackupBytes,
     ai: await publicAiInfo(cfg, { store, admin: true }),
     opencodeSessionLimit: OPENCODE_SESSION_LIMIT
   });
@@ -131,6 +136,60 @@ admin.get('/statistics', (req, res) => {
 });
 
 admin.get('/maintenance/summary', (req, res) => res.json(store.maintenanceSummary()));
+
+// El respaldo SQLite conserva tablas de métricas, auditoría y preferencias, a
+// diferencia de la exportación JSON, que solo representa tarjetas.
+admin.get('/backup', maintenanceLimiter, async (req, res, next) => {
+  let dir;
+  try {
+    dir = await mkdtemp(resolve(tmpdir(), 'vocab-cards-backup-'));
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = resolve(dir, `vocab-cards-${stamp}.sqlite`);
+    await store.backup(file);
+    res.set('Cache-Control', 'no-store');
+    res.download(file, `vocab-cards-${stamp}.sqlite`, err => {
+      rm(dir, { recursive: true, force: true }).catch(() => {});
+      if (err && !res.headersSent) next(err);
+    });
+  } catch (err) {
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    next(err);
+  }
+});
+
+const RESTORE_CONFIRMATION = 'RESTAURAR BASE DE DATOS';
+admin.post('/backup/restore', maintenanceLimiter, async (req, res, next) => {
+  const cfg = await loadConfig();
+  binary(cfg.maxBackupBytes)(req, res, next);
+}, async (req, res) => {
+  if (req.get('x-backup-confirmation') !== RESTORE_CONFIRMATION) {
+    return res.status(400).json({ error: 'La frase de confirmación no coincide con la restauración.' });
+  }
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).json({ error: 'No se recibió un archivo SQLite para restaurar.' });
+  }
+
+  let dir;
+  let file;
+  try {
+    // boot.dbPath es la base que este proceso abrió; la configuración puede
+    // cambiar en disco sin mover la conexión activa hasta el próximo arranque.
+    dir = await mkdtemp(join(dirname(boot.dbPath), '.vocab-cards-restore-'));
+    file = resolve(dir, 'uploaded.sqlite');
+    await writeFile(file, req.body, { flag: 'wx' });
+    validateBackupDatabase(file);
+    await store.restoreBackup(file);
+    file = null; // restoreBackup movió el archivo al dbPath configurado.
+    res.json({ ok:true, total:store.size });
+  } catch (err) {
+    if (err instanceof TypeError) return res.status(400).json({ error:err.message });
+    console.error(err);
+    res.status(500).json({ error:err.message || 'No se pudo restaurar el respaldo.' });
+  } finally {
+    if (file) await rm(file, { force: true }).catch(() => {});
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+});
 
 const CLEAR_PHRASES = {
   cards:'ELIMINAR TARJETAS', audit:'LIMPIAR AUDITORÍA', metrics:'LIMPIAR MÉTRICAS', all:'REINICIAR TODO'
@@ -239,7 +298,9 @@ if (DEV) {
 
 /* -------------------------------------------------------------- errores */
 app.use((err, req, res, next) => {
-  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'El contenido es demasiado grande. Divídelo en partes o sube maxImportBytes en config.json.' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: req.path.includes('/backup/restore')
+    ? 'El respaldo supera el límite permitido. Reduce el archivo o sube maxBackupBytes en config.json.'
+    : 'El contenido es demasiado grande. Divídelo en partes o sube maxImportBytes en config.json.' });
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'La petición no es JSON válido.' });
   console.error(err);
   res.status(500).json({ error: 'Error interno del servidor.' });

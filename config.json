@@ -6,6 +6,7 @@
   "pageSize": 12,
   "maxPageSize": 100,
   "maxImportBytes": 5242880,
+  "maxBackupBytes": 67108864,
   "trustProxy": false,
   "host": "0.0.0.0",
   "port": 3000,

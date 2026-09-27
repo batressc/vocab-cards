@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
+import { backup as sqliteBackup, DatabaseSync } from 'node:sqlite';
+import { existsSync, mkdtempSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { VocabStore } from '../vocab-store.js';
+import { DATABASE_SCHEMA_VERSION, validateBackupDatabase } from '../db.js';
 import { tempStore, entry, source } from './helpers.js';
 
 const aiSnapshot = (models = ['a', 'b']) => ({
@@ -99,6 +102,114 @@ test('eliminar y exportar', t => {
   assert.deepEqual(exp.entries.map(e => e.id), ['b']);
   assert.ok(exp.entries[0].addedAt);
   assert.equal(exp.entries[0].source, undefined);
+});
+
+test('un respaldo SQLite restaura todo el estado y refresca la caché', async t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('antes')])], 'update', 'texto');
+  store.recordUsage({
+    clientId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sessionId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    events:[{ type:'search', entryId:null, term:'antes', resultCount:1, value:null }]
+  });
+  const stagingDir = mkdtempSync(join(dirname(path), '.restore-test-'));
+  const backupPath = join(stagingDir, 'snapshot.sqlite');
+  await store.backup(backupPath);
+  store.apply([source([entry('despues')])], 'update', 'texto');
+
+  assert.deepEqual(validateBackupDatabase(backupPath), { version:DATABASE_SCHEMA_VERSION });
+  await store.restoreBackup(backupPath);
+
+  assert.equal(store.get('antes').head, 'antes');
+  assert.equal(store.get('despues'), null, 'la caché se reconstruye desde el respaldo activado');
+  assert.equal(store.statistics('all').usage.searches, 1, 'restaura también datos que no son tarjetas');
+});
+
+test('un archivo SQLite inválido se rechaza antes de tocar el estado activo', t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('vigente')])], 'update', 'texto');
+  const invalidPath = `${path}.invalid.sqlite`;
+  writeFileSync(invalidPath, 'no es sqlite');
+
+  assert.throws(() => validateBackupDatabase(invalidPath), /respaldo SQLite válido/);
+  assert.equal(store.get('vigente').head, 'vigente');
+  assert.equal(store.size, 1);
+});
+
+test('un fallo al activar el respaldo reabre la base anterior', async t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('vigente')])], 'update', 'texto');
+
+  await assert.rejects(store.restoreBackup(`${path}.no-existe`), /base de datos anterior sigue activa/);
+  assert.equal(store.get('vigente').head, 'vigente');
+  store.apply([source([entry('posterior')])], 'update', 'texto');
+  assert.equal(store.get('posterior').head, 'posterior', 'la conexión restaurada admite nuevas escrituras');
+});
+
+test('backup y restore se serializan y la cola continúa después de un rechazo', async t => {
+  let releaseBackup;
+  let failFirst = true;
+  const events = [];
+  const gate = new Promise(resolve => { releaseBackup = resolve; });
+  const { store, path, cleanup } = tempStore({
+    backupDatabase: async (db, target) => {
+      events.push('backup:start');
+      if (failFirst) {
+        failFirst = false;
+        throw new Error('fallo inyectado');
+      }
+      await gate;
+      await sqliteBackup(db, target);
+      events.push('backup:end');
+    },
+    fileOps:{
+      renameSync(...args) {
+        events.push('restore:rename');
+        return renameSync(...args);
+      }
+    }
+  });
+  t.after(cleanup);
+  store.apply([source([entry('vigente')])], 'update', 'texto');
+
+  await assert.rejects(store.backup(`${path}.failed`), /fallo inyectado/);
+  const backupPath = `${path}.snapshot`;
+  const backupPromise = store.backup(backupPath);
+  const restorePromise = store.restoreBackup(backupPath);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, ['backup:start', 'backup:start'], 'restore espera aunque una operación anterior haya rechazado');
+
+  releaseBackup();
+  await backupPromise;
+  await restorePromise;
+  assert.deepEqual(events.slice(-3), ['backup:end', 'restore:rename', 'restore:rename']);
+  assert.equal(store.get('vigente').head, 'vigente');
+});
+
+test('un rollback incompleto no reabre ni crea una base vacía', async t => {
+  let renameCount = 0;
+  const { store, path, cleanup } = tempStore({
+    fileOps:{
+      renameSync(sourcePath, targetPath) {
+        renameCount++;
+        if (renameCount > 1) throw Object.assign(new Error(`rename inyectado ${renameCount}`), { code:'EACCES' });
+        return renameSync(sourcePath, targetPath);
+      }
+    }
+  });
+  t.after(cleanup);
+  store.apply([source([entry('vigente')])], 'update', 'texto');
+  const candidate = `${path}.candidate`;
+  writeFileSync(candidate, 'candidato');
+
+  await assert.rejects(store.restoreBackup(candidate), error => {
+    assert.equal(error.code, 'RESTORE_ROLLBACK_FAILED');
+    assert.match(error.message, /evitar crear una base vacía/);
+    assert.ok(error.cause instanceof AggregateError);
+    assert.equal(error.cause.errors.length, 2, 'conserva los fallos de activación y rollback');
+    return true;
+  });
+  assert.equal(existsSync(path), false, 'no recrea el dbPath ausente');
+  assert.equal(existsSync(`${path}.restore-previous`), true, 'conserva el original recuperable');
 });
 
 test('get obtiene una copia y replace renombra atómicamente conservando addedAt', t => {

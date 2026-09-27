@@ -215,7 +215,7 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
 | DELETE | `/api/vocab/entries/:id` | `{ ok, total }` |
-| GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, ai, opencodeSessionLimit: { default, min, max } }`. `ai.providers` es la proyección visible y `ai.allProviders` es el snapshot completo con `visible` y `category` efectivos. |
+| GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, maxBackupBytes, ai, opencodeSessionLimit: { default, min, max } }`. `ai.providers` es la proyección visible y `ai.allProviders` es el snapshot completo con `visible` y `category` efectivos. |
 | POST | `/api/admin/ai/models/refresh` | Fuerza el descubrimiento y devuelve la misma vista administrativa completa, con frescura y errores sanitizados. |
 | PUT | `/api/admin/ai/curation` | `{ models: [{ provider, model, visible, category }], default: { provider, model } \| null }` → vista administrativa actualizada. Debe incluir exactamente una vez cada modelo del snapshot completo vigente. |
 | POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin, generationId? }` → `{ items, summary, importId? }` |
@@ -229,6 +229,8 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | GET | `/api/admin/statistics?range=7d\|30d\|90d\|all` | KPIs, serie diaria de generaciones (`daily`) y de actividad de uso (`usageDaily`: vistas, giros, audios y búsquedas por día), y agregaciones por proveedor/modelo, tarjeta, búsqueda y término generado. |
 | GET | `/api/admin/maintenance/summary` | Conteos previos de tarjetas, auditoría, métricas, preferencias, epoch y estado de seed. |
 | POST | `/api/admin/maintenance/clear` | `{ scope, confirmation }`; `scope`: `cards`, `audit`, `metrics` o `all`. |
+| GET | `/api/admin/backup` | Descarga autenticada de un archivo `.sqlite` consistente que contiene toda la base configurada. |
+| POST | `/api/admin/backup/restore` | Cuerpo binario `application/vnd.sqlite3`, cabecera `X-Backup-Confirmation: RESTAURAR BASE DE DATOS`. Valida integridad, versión y esquema antes de reemplazar todo el estado. Tiene el limitador de mantenimiento y el límite `maxBackupBytes`. |
 
 ### Telemetría y privacidad
 
@@ -274,6 +276,23 @@ nunca ejecutan `VACUUM`.
 
 Ningún alcance borra el archivo SQLite, `config.json`, `.env` o `data/seed`.
 Limpiar métricas tampoco puede borrar `localStorage` en navegadores desconectados.
+
+### Respaldos completos
+
+`GET /api/vocab/export` sigue siendo una exportación lógica de tarjetas JSON:
+no incluye auditoría, métricas, preferencias de IA ni estado de aprendizaje. En
+cambio, `GET /api/admin/backup` usa la API de copia de SQLite para obtener un
+punto consistente de la base mientras la conexión de la aplicación permanece
+abierta y requiere autenticación administrativa.
+
+La restauración recibe un único archivo binario acotado por `maxBackupBytes`.
+Antes de cualquier efecto se abre de solo lectura y exige `integrity_check = ok`,
+la versión de esquema actual y todas las tablas requeridas. Luego se cierra la
+conexión activa, se activa el archivo validado mediante renombres en el mismo
+directorio, se reabre la conexión y se reconstruye la caché de tarjetas. Si no
+puede activarse o reabrirse, se vuelve a activar la base anterior. No usa
+`deserialize()`, por lo que la conexión nunca se sustituye por una base en
+memoria.
 
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.

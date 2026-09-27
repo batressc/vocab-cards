@@ -51,6 +51,17 @@ async function adminApi(path, options = {}){
   return body;
 }
 
+async function adminBinary(path, body, headers = {}){
+  const res = await fetch(`api/admin/${path}`, {
+    method:'POST', body,
+    headers:{ Accept:'application/json', Authorization:`Bearer ${state.token}`, ...headers }
+  });
+  const result = await res.json().catch(() => ({}));
+  if (res.status === 401) { logout('La clave no es correcta o cambió. Escríbela de nuevo.'); throw new Error(result.error || 'Clave incorrecta.'); }
+  if (!res.ok) throw new Error(result.error || `El servidor respondió con el código ${res.status}.`);
+  return result;
+}
+
 /* ================= Acceso ================= */
 async function login(token){
   state.token = token;
@@ -75,6 +86,7 @@ function showSession(){
   $('#sessionText').textContent = `Sesión de administración activa. ${plural(state.info.total, 'tarjeta guardada', 'tarjetas guardadas')}.`;
   $('#folderName').textContent = state.info.dataFolder;
   $('#limitHint').textContent = `Hasta ${fmtSize(state.info.maxImportBytes)} por archivo.`;
+  $('#databaseBackupLimit').textContent = `Máximo ${fmtSize(state.info.maxBackupBytes)}. Solo archivos descargados desde esta aplicación con el mismo esquema.`;
   resetAiDraft();
     renderAiDefaultSettings();
     selectAdminTab(state.adminTab);
@@ -834,6 +846,75 @@ async function loadHistory(){
       </tr>`).join('') : '<tr><td colspan="7" class="muted">Todavía no hay importaciones.</td></tr>';
   } catch { /* el error ya se mostró */ }
 }
+
+/* ================= Respaldo completo SQLite ================= */
+const BACKUP_RESTORE_PHRASE = 'RESTAURAR BASE DE DATOS';
+let databaseBackupFile = null;
+
+$('#databaseBackupDownload').addEventListener('click', async () => {
+  const button = $('#databaseBackupDownload');
+  button.disabled = true;
+  $('#databaseBackupStatus').textContent = 'Creando una copia consistente de la base de datos…';
+  try {
+    const res = await fetch('api/admin/backup', { headers:{ Authorization:`Bearer ${state.token}` } });
+    if (res.status === 401) { logout('La clave no es correcta o cambió. Escríbela de nuevo.'); throw new Error('Clave incorrecta.'); }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'No se pudo crear el respaldo.');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `vocab-cards-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    $('#databaseBackupStatus').textContent = 'Respaldo completo descargado.';
+  } catch (err) { $('#databaseBackupStatus').textContent = err.message; }
+  finally { button.disabled = false; }
+});
+
+$('#databaseBackupFile').addEventListener('change', e => {
+  const file = e.target.files[0] || null;
+  const max = state.info?.maxBackupBytes || 0;
+  databaseBackupFile = file && (!max || file.size <= max) ? file : null;
+  $('#databaseBackupRestore').disabled = !databaseBackupFile;
+  $('#databaseBackupStatus').textContent = file && !databaseBackupFile
+    ? `El archivo supera el máximo de ${fmtSize(max)}.`
+    : file ? `${file.name} (${fmtSize(file.size)}) listo para confirmar.` : '';
+});
+
+$('#databaseBackupRestore').addEventListener('click', () => {
+  if (!databaseBackupFile) return;
+  $('#backupRestoreDialogText').textContent = `Se reemplazará toda la base de datos actual por “${databaseBackupFile.name}”. Esta acción elimina del estado activo cualquier cambio posterior al respaldo.`;
+  $('#backupRestoreConfirmation').value = '';
+  $('#backupRestoreConfirm').disabled = true;
+  $('#backupRestoreDialogStatus').textContent = '';
+  $('#backupRestoreDialog').showModal();
+  $('#backupRestoreConfirmation').focus();
+});
+
+$('#backupRestoreConfirmation').addEventListener('input', e => {
+  $('#backupRestoreConfirm').disabled = e.target.value !== BACKUP_RESTORE_PHRASE;
+});
+
+$('#backupRestoreForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (e.submitter?.value === 'cancel') { $('#backupRestoreDialog').close(); return; }
+  if (!databaseBackupFile || $('#backupRestoreConfirmation').value !== BACKUP_RESTORE_PHRASE) return;
+  $('#backupRestoreConfirm').disabled = true;
+  $('#backupRestoreDialogStatus').textContent = 'Validando y restaurando la base de datos…';
+  try {
+    await adminBinary('backup/restore', databaseBackupFile, {
+      'Content-Type':'application/vnd.sqlite3', 'X-Backup-Confirmation':BACKUP_RESTORE_PHRASE
+    });
+    store.set('vocab-known', []);
+    $('#backupRestoreDialogStatus').textContent = 'Restauración completada. Recargando…';
+    setTimeout(() => location.reload(), 500);
+  } catch (err) {
+    $('#backupRestoreDialogStatus').textContent = err.message;
+    $('#backupRestoreConfirm').disabled = false;
+  }
+});
 
 /* ================= Estadísticas y mantenimiento ================= */
 const n = value => Number(value || 0).toLocaleString('es');
