@@ -3,11 +3,12 @@ import { rateLimit } from 'express-rate-limit';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ROOT, loadConfig } from './config.js';
-import { VocabStore, readFolderSources } from './vocab-store.js';
+import { VocabStore, normalizeGenerationId, readFolderSources } from './vocab-store.js';
 import { createAuth } from './auth.js';
 import { publicAiInfo, OPENCODE_SESSION_LIMIT } from './ai.js';
 import { aiModelCatalog } from './ai-models.js';
 import { generatePreview } from './ai-workflow.js';
+import { normalizeTelemetryBatch } from './telemetry.js';
 
 // --dev: Vite sirve el frontend con recarga en caliente. Sin --dev: se sirve dist/ (npm run build).
 const DEV = process.argv.includes('--dev');
@@ -18,7 +19,7 @@ const store = new VocabStore(boot.dbPath);
 const auth = createAuth(loadConfig);
 
 // Primera vez: si la base de datos está vacía, importa la carpeta de ejemplo.
-if (store.size === 0 && boot.seedFromFolderWhenEmpty) {
+if (store.size === 0 && boot.seedFromFolderWhenEmpty && store.shouldSeedWhenEmpty()) {
   const r = store.apply(await readFolderSources(boot), 'keep', 'carpeta');
   if (r.summary.new) console.log(`Base de datos inicial: ${r.summary.new} registros importados de ${boot.dataFolderSetting}.`);
 }
@@ -31,6 +32,14 @@ const json = limit => express.json({ limit });
 const writeLimiter = rateLimit({
   windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false,
   message: { error: 'Demasiadas operaciones seguidas; espera un minuto.' }
+});
+const telemetryLimiter = rateLimit({
+  windowMs:60_000, limit:120, standardHeaders:'draft-8', legacyHeaders:false,
+  message:{ error:'Demasiados eventos de uso seguidos; espera un minuto.' }
+});
+const maintenanceLimiter = rateLimit({
+  windowMs:60 * 60_000, limit:5, standardHeaders:'draft-8', legacyHeaders:false,
+  message:{ error:'Demasiadas operaciones de mantenimiento; espera antes de volver a intentarlo.' }
 });
 const asMode = v => v === 'keep' ? 'keep' : 'update';
 
@@ -56,6 +65,16 @@ vocab.delete('/entries/:id', writeLimiter, auth.require, (req, res) => {
 
 app.use('/api/vocab', vocab);
 
+app.post('/api/telemetry/events', json('32kb'), telemetryLimiter, (req, res) => {
+  try {
+    const batch = normalizeTelemetryBatch(req.body);
+    res.status(202).json({ ok:true, ...store.recordUsage(batch) });
+  } catch (err) {
+    if (err instanceof TypeError) return res.status(400).json({ error:err.message });
+    throw err;
+  }
+});
+
 /* ------------------------------------------------ administración (con clave) */
 const admin = express.Router();
 admin.use(writeLimiter, auth.require);
@@ -75,15 +94,21 @@ admin.get('/check', async (req, res) => {
 
 // Texto pegado o archivos subidos: { sources: [{ name, text }], mode, dryRun }
 admin.post('/import', async (req, res, next) => json((await loadConfig()).maxImportBytes + 64 * 1024)(req, res, next), (req, res) => {
-  const { sources, mode, dryRun, origin } = req.body ?? {};
-  if (!Array.isArray(sources) || !sources.length) return res.status(400).json({ error: 'No se recibió contenido para importar.' });
-  const clean = sources.slice(0, 50).map((s, i) => ({
-    name: String(s?.name || `Texto ${i + 1}`).slice(0, 120),
-    text: typeof s?.text === 'string' ? s.text : '',
-    error: typeof s?.text === 'string' && s.text.trim() ? undefined : 'está vacío.'
-  }));
-  const originName = ['archivo', 'ia'].includes(origin) ? origin : 'texto';
-  res.json(dryRun ? store.plan(clean, asMode(mode)) : store.apply(clean, asMode(mode), originName));
+  try {
+    const { sources, mode, dryRun, origin } = req.body ?? {};
+    const generationId = normalizeGenerationId(req.body?.generationId);
+    if (!Array.isArray(sources) || !sources.length) return res.status(400).json({ error: 'No se recibió contenido para importar.' });
+    const clean = sources.slice(0, 50).map((s, i) => ({
+      name: String(s?.name || `Texto ${i + 1}`).slice(0, 120),
+      text: typeof s?.text === 'string' ? s.text : '',
+      error: typeof s?.text === 'string' && s.text.trim() ? undefined : 'está vacío.'
+    }));
+    const originName = ['archivo', 'ia'].includes(origin) ? origin : 'texto';
+    res.json(dryRun ? store.plan(clean, asMode(mode)) : store.apply(clean, asMode(mode), originName, generationId ? { generationId } : {}));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error:err.message, code:err.code });
+    throw err;
+  }
 });
 
 // Importa los .json de la carpeta configurada en el servidor: { mode, dryRun }
@@ -97,6 +122,27 @@ admin.post('/import-folder', json('4kb'), async (req, res) => {
 
 admin.get('/imports', (req, res) => res.json(store.history(15)));
 
+admin.get('/statistics', (req, res) => {
+  try { res.json(store.statistics(req.query.range || '30d')); }
+  catch (err) {
+    if (err instanceof TypeError) return res.status(400).json({ error:err.message });
+    throw err;
+  }
+});
+
+admin.get('/maintenance/summary', (req, res) => res.json(store.maintenanceSummary()));
+
+const CLEAR_PHRASES = {
+  cards:'ELIMINAR TARJETAS', audit:'LIMPIAR AUDITORÍA', metrics:'LIMPIAR MÉTRICAS', all:'REINICIAR TODO'
+};
+admin.post('/maintenance/clear', maintenanceLimiter, json('4kb'), (req, res) => {
+  const scope = req.body?.scope;
+  if (!Object.hasOwn(CLEAR_PHRASES, scope) || req.body?.confirmation !== CLEAR_PHRASES[scope]) {
+    return res.status(400).json({ error:'La frase de confirmación no coincide con la operación solicitada.' });
+  }
+  res.json({ ok:true, ...store.clearMaintenance(scope) });
+});
+
 admin.get('/entries/:id', (req, res) => {
   const entry = store.get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'La tarjeta no existe.' });
@@ -105,7 +151,8 @@ admin.get('/entries/:id', (req, res) => {
 
 admin.put('/entries/:id', json('16kb'), (req, res) => {
   try {
-    res.json({ ok: true, ...store.replace(req.params.id, req.body?.entry, req.body?.source) });
+    const generationId = normalizeGenerationId(req.body?.generationId);
+    res.json({ ok:true, ...store.replace(req.params.id, req.body?.entry, req.body?.source, generationId ? { generationId } : {}) });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
     throw err;

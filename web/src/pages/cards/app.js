@@ -1,11 +1,13 @@
 /* Página de tarjetas: filtros, orden, scroll infinito, voz y acciones sobre tarjetas. */
 import { $, esc, store, fmtDateTime, toast, ADMIN_TOKEN_KEY } from '../../shared/utils.js';
 import { cardHTML, flip, initKnown, known, setAdminUnlocked, KINDS, safeKey } from '../../shared/card.js';
+import { observeCards, track } from '../../shared/telemetry.js';
 export { cardHTML, flip };
 
 /* ================= Configuración del cliente ================= */
 // Rutas relativas: funciona igual en la raíz del dominio o en un subdirectorio (IIS, proxy).
 const API = 'api/vocab';
+const DATA_EPOCH_KEY = 'vocab-data-epoch';
 
 const LEVEL_NAMES = { A1:'Principiante', A2:'Básico', B1:'Intermedio', B2:'Intermedio alto', C1:'Avanzado', C2:'Maestría' };
 const SORTS = {
@@ -203,6 +205,8 @@ async function loadMore(){
     if (gen !== feed.gen) return;
     if (feed.skip === 0) firstPageHooks.forEach(fn => fn(page));
     grid.insertAdjacentHTML('beforeend', page.items.map(cardHTML).join(''));
+    observeCards(grid);
+    if (feed.skip === 0 && $('#q').value.trim()) track('search', { term:$('#q').value.trim(), resultCount:page.total });
     feed.skip += page.items.length;
     feed.shown += page.items.length;
     feed.total = page.total;
@@ -277,6 +281,12 @@ function orderedKinds(keys){
 }
 
 export function applyMeta(m){
+  const previousEpoch = store.get(DATA_EPOCH_KEY, null);
+  if ((previousEpoch !== null && previousEpoch !== m.dataEpoch) || (previousEpoch === null && m.dataEpoch > 0)) {
+    known.clear();
+    store.set('vocab-known', []);
+  }
+  store.set(DATA_EPOCH_KEY, m.dataEpoch);
   meta = m;
   pageSize = m.pageSize || 12;
   levelMS.setOptions(orderedLevels(Object.keys(m.levels || {})).map(l => ({
@@ -412,13 +422,14 @@ $('#voiceSel').addEventListener('change', e => store.set('vocab-voice', e.target
 grid.addEventListener('click', e => {
   const card = e.target.closest('.card'); if (!card) return;
   const s = e.target.closest('[data-say]');
-  if (s) { speak(s.dataset.say, parseFloat(s.dataset.rate) || 0.95, s); return; }
+  if (s) { track('audio_play', { entryId:card.dataset.id }); speak(s.dataset.say, parseFloat(s.dataset.rate) || 0.95, s); return; }
   if (e.target.closest('[data-del]')) { deleteCard(card); return; }
   const k = e.target.closest('.known');
   if (k) {
     const id = card.dataset.id;
     known.has(id) ? known.delete(id) : known.add(id);
     store.set('vocab-known', [...known]);
+    track('known_changed', { entryId:id, value:known.has(id) });
     if ($('#hideKnown').checked && known.has(id)) {
       card.remove(); feed.shown--; updateStatus(); maybeLoadMore(); return;
     }
@@ -426,7 +437,10 @@ grid.addEventListener('click', e => {
     card.classList.toggle('is-known', known.has(id));
     updateStatus(); return;
   }
-  if (e.target.closest('[data-flip]') || !e.target.closest('button, a, input, select, label')) flip(card);
+  if (e.target.closest('[data-flip]') || !e.target.closest('button, a, input, select, label')) {
+    track('card_flip', { entryId:card.dataset.id });
+    flip(card);
+  }
 });
 
 /* ================= Controles ================= */
@@ -437,7 +451,11 @@ const sortUI  = sortMenu($('#sortMenu'), resetFeed);
 let searchTimer;
 $('#q').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(resetFeed, 250); });
 $('#hideKnown').addEventListener('change', resetFeed);
-$('#practice').addEventListener('change', e => { document.body.classList.toggle('practice', e.target.checked); store.set('vocab-practice', e.target.checked); });
+$('#practice').addEventListener('change', e => {
+  document.body.classList.toggle('practice', e.target.checked);
+  store.set('vocab-practice', e.target.checked);
+  track('practice_changed', { value:e.target.checked });
+});
 $('#shuffle').addEventListener('click', () => {
   sortState = { by:'random', dir:'asc', seed:newSeed() };
   sortUI.save(); sortUI.paint(); resetFeed();

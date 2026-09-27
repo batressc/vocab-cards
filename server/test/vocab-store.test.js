@@ -9,6 +9,22 @@ const aiSnapshot = (models = ['a', 'b']) => ({
   default:{ provider:'openai', model:models[0] }, stale:false, errors:[]
 });
 
+test('migra una base versión 2 sin alterar sus tarjetas', t => {
+  const { store, path, cleanup } = tempStore();
+  store.apply([source([entry('legacy')])], 'update', 'texto');
+  store.close();
+  const db = new DatabaseSync(path);
+  db.exec('DROP TABLE app_state; DROP TABLE usage_events; DROP TABLE learning_state; DROP TABLE ai_generations; DROP TABLE admin_audit; PRAGMA user_version = 2');
+  db.close();
+  const migrated = new VocabStore(path);
+  t.after(() => { migrated.close(); cleanup(); });
+  assert.equal(migrated.get('legacy').head, 'legacy');
+  assert.equal(migrated.meta(12).dataEpoch, 0);
+  const check = new DatabaseSync(path);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 3);
+  check.close();
+});
+
 test('plan no guarda nada; apply guarda y registra la importación', t => {
   const { store, cleanup } = tempStore(); t.after(cleanup);
   const plan = store.plan([source([entry('give up'), entry('run into')])], 'update');
@@ -121,7 +137,7 @@ test('migra y persiste la curación global de modelos en SQLite', t => {
   });
   store.close();
   const db = new DatabaseSync(path);
-  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 2);
+  assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3);
   db.close();
   const reopened = new VocabStore(path);
   t.after(() => { reopened.close(); cleanup(); });
@@ -172,4 +188,215 @@ test('un predeterminado ausente usa fallback sin perder preferencias y se recupe
   const returned = store.projectAiCatalog(aiSnapshot(), { admin:true });
   assert.deepEqual(returned.default, { provider:'openai', model:'b' });
   assert.equal(returned.allProviders[0].models[1].category, 'advanced');
+});
+
+const recordGeneration = (store, id, operation) => store.recordAiGeneration({
+  id, createdAt:new Date().toISOString(), operation, provider:'custom', model:'model',
+  term:id, entryId:operation === 'edit' ? 'word' : null, outcome:'success', durationMs:5, itemCount:1, validCount:1
+});
+
+const generationRow = (path, id) => {
+  const db = new DatabaseSync(path);
+  try {
+    const row = db.prepare('SELECT operation, saved_count, saved_at FROM ai_generations WHERE id = ?').get(id);
+    return row ? { ...row } : row;
+  }
+  finally { db.close(); }
+};
+
+test('consume una generación create o edit exactamente una vez al guardar', t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  const createId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const editId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  recordGeneration(store, createId, 'create');
+  store.apply([source([entry('word')])], 'update', 'ia', { generationId:createId });
+  assert.equal(generationRow(path, createId).saved_count, 1);
+  assert.ok(generationRow(path, createId).saved_at);
+
+  recordGeneration(store, editId, 'edit');
+  store.replace('word', entry('changed'), 'ia', { generationId:editId });
+  assert.equal(generationRow(path, editId).saved_count, 1);
+  assert.ok(generationRow(path, editId).saved_at);
+});
+
+test('rechaza una generación inexistente y revierte tarjeta e historial', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  assert.throws(
+    () => store.apply([source([entry('missing')])], 'update', 'ia', { generationId:id }),
+    error => error.status === 400 && error.code === 'GENERATION_NOT_FOUND'
+  );
+  assert.equal(store.get('missing'), null);
+  assert.equal(store.size, 0, 'la caché tampoco incorpora la tarjeta revertida');
+  assert.equal(store.maintenanceSummary().imports, 0);
+});
+
+test('una generación consumida no puede reutilizarse ni sobrescribir su conteo', t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  recordGeneration(store, id, 'create');
+  store.apply([source([entry('first')])], 'update', 'ia', { generationId:id });
+  const consumed = generationRow(path, id);
+  assert.throws(
+    () => store.apply([source([entry('second')])], 'update', 'ia', { generationId:id }),
+    error => error.status === 400 && error.code === 'GENERATION_ALREADY_CONSUMED'
+  );
+  assert.deepEqual(generationRow(path, id), consumed);
+  assert.equal(store.get('second'), null);
+  assert.equal(store.maintenanceSummary().imports, 1);
+});
+
+test('rechaza correlaciones cruzadas entre create e import y edit y replace', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('word')])], 'update', 'texto');
+  const createId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const editId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  recordGeneration(store, createId, 'create');
+  recordGeneration(store, editId, 'edit');
+  const before = store.maintenanceSummary();
+
+  assert.throws(
+    () => store.replace('word', entry('changed'), 'ia', { generationId:createId }),
+    error => error.status === 400 && error.code === 'GENERATION_OPERATION_MISMATCH'
+  );
+  assert.throws(
+    () => store.apply([source([entry('new')])], 'update', 'ia', { generationId:editId }),
+    error => error.status === 400 && error.code === 'GENERATION_OPERATION_MISMATCH'
+  );
+  assert.equal(store.get('word').head, 'word');
+  assert.equal(store.get('new'), null);
+  assert.deepEqual(store.maintenanceSummary(), before);
+});
+
+test('una importación correlacionada sin cambios no consume ni registra y permite un guardado posterior', t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('word')])], 'update', 'texto');
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  recordGeneration(store, id, 'create');
+  const imports = store.maintenanceSummary().imports;
+  assert.throws(
+    () => store.apply([source([entry('word')])], 'update', 'ia', { generationId:id }),
+    error => error.status === 400 && error.code === 'GENERATION_WITHOUT_CHANGES'
+  );
+  assert.deepEqual(generationRow(path, id), { operation:'create', saved_count:0, saved_at:null });
+  assert.equal(store.maintenanceSummary().imports, imports);
+
+  store.apply([source([entry('word', { meaning:'Actualizado' })])], 'update', 'ia', { generationId:id });
+  assert.equal(store.get('word').meaning, 'Actualizado');
+  assert.equal(generationRow(path, id).saved_count, 1);
+});
+
+test('un fallo posterior al consumo revierte generación, tarjeta e importación', t => {
+  const { store, path, cleanup } = tempStore(); t.after(cleanup);
+  const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  recordGeneration(store, id, 'create');
+  assert.throws(() => store.apply([source([entry('rollback')])], 'update', null, { generationId:id }));
+  assert.deepEqual(generationRow(path, id), { operation:'create', saved_count:0, saved_at:null });
+  assert.equal(store.get('rollback'), null);
+  assert.equal(store.size, 0);
+  assert.equal(store.maintenanceSummary().imports, 0);
+});
+
+test('rechaza generationId no canónico antes de guardar o auditar', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  assert.throws(
+    () => store.apply([source([entry('unsafe')])], 'update', 'ia', { generationId:'texto-arbitrario' }),
+    error => error.status === 400 && error.code === 'INVALID_GENERATION_ID'
+  );
+  assert.equal(store.size, 0);
+  assert.equal(store.maintenanceSummary().imports, 0);
+
+  store.apply([source([entry('safe')])], 'update', 'texto');
+  const before = store.maintenanceSummary();
+  assert.throws(() => store.replace('safe', entry('changed'), 'ia', { generationId:null }), /generación/);
+  assert.equal(store.get('safe').head, 'safe');
+  assert.deepEqual(store.maintenanceSummary(), before);
+});
+
+test('agrega telemetría, deduplica vistas y actualiza el estado de aprendizaje', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const batch = {
+    clientId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sessionId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    events:[
+      { type:'search', entryId:null, term:'give up', resultCount:0, value:null },
+      { type:'card_view', entryId:'give-up', term:null, resultCount:null, value:null },
+      { type:'card_view', entryId:'give-up', term:null, resultCount:null, value:null },
+      { type:'known_changed', entryId:'give-up', term:null, resultCount:null, value:1 }
+    ]
+  };
+  assert.equal(store.recordUsage(batch).accepted, 3);
+  const stats = store.statistics('all');
+  assert.equal(stats.usage.card_views, 1);
+  assert.equal(stats.usage.no_result_searches, 1);
+  assert.equal(stats.learning.known, 1);
+  assert.equal(stats.searches[0].term, 'give up');
+});
+
+test('las limpiezas son separadas, idempotentes y mantienen la caché y el estado de seed', t => {
+  const { store, path, cleanup } = tempStore();
+  store.apply([source([entry('one')])], 'update', 'texto');
+  store.recordUsage({
+    clientId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sessionId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    events:[{ type:'card_view', entryId:'one', term:null, resultCount:null, value:null }]
+  });
+  assert.equal(store.shouldSeedWhenEmpty(), true);
+  const cards = store.clearMaintenance('cards');
+  assert.equal(cards.changed, true);
+  assert.equal(cards.removed.cards, 1);
+  assert.equal(store.size, 0);
+  assert.equal(store.shouldSeedWhenEmpty(), false);
+  assert.equal(store.meta(12).dataEpoch, 1);
+  assert.equal(store.statistics('all').usage.card_views, 1, 'las métricas sobreviven al borrado de tarjetas');
+
+  store.clearMaintenance('audit');
+  const auditSecond = store.clearMaintenance('audit');
+  assert.equal(auditSecond.changed, false);
+  assert.equal(auditSecond.removed.audit, 0);
+  assert.equal(store.maintenanceSummary().audit, 1, 'queda una única marca audit.cleared');
+  store.clearMaintenance('metrics');
+  assert.equal(store.statistics('all').usage.events, 0);
+  store.close();
+
+  const reopened = new VocabStore(path);
+  t.after(() => { reopened.close(); cleanup(); });
+  assert.equal(reopened.shouldSeedWhenEmpty(), false, 'la inhibición de seed persiste tras reiniciar');
+  assert.equal(reopened.meta(12).dataEpoch, 1);
+});
+
+test('limpiar tarjetas vacías inhibe seed una vez sin repetir epoch ni auditoría', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const first = store.clearMaintenance('cards');
+  assert.equal(first.changed, true);
+  assert.equal(first.removed.cards, 0);
+  assert.equal(first.summary.seedSuppressed, true);
+  assert.equal(first.summary.dataEpoch, 1);
+  assert.equal(first.summary.audit, 1);
+
+  const second = store.clearMaintenance('cards');
+  assert.equal(second.changed, false);
+  assert.equal(second.summary.dataEpoch, 1);
+  assert.equal(second.summary.audit, 1);
+  assert.deepEqual(second.removed, { cards:0, imports:0, audit:0, usageEvents:0, learningStates:0, aiGenerations:0, aiPreferences:0 });
+});
+
+test('reiniciar todo borra preferencias y deja solo system.reset', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  const snapshot = aiSnapshot(['a']);
+  store.saveAiCuration(snapshot, {
+    models:[{ provider:'openai', model:'a', visible:true, category:'balanced' }],
+    default:{ provider:'openai', model:'a' }
+  });
+  store.apply([source([entry('one')])], 'update', 'texto');
+  const result = store.clearMaintenance('all');
+  assert.equal(result.changed, true);
+  assert.equal(result.summary.cards, 0);
+  assert.equal(result.summary.imports, 0);
+  assert.equal(result.summary.audit, 1);
+  assert.equal(result.summary.aiPreferences, 0);
+  assert.equal(store.aiPreferences().default, null);
+
+  const second = store.clearMaintenance('all');
+  assert.equal(second.changed, false);
+  assert.equal(second.summary.dataEpoch, result.summary.dataEpoch);
+  assert.equal(second.summary.audit, 1);
 });

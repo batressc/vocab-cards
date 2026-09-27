@@ -41,6 +41,7 @@
       <button type="button" role="tab" id="admin-tab-ai" aria-controls="admin-pane-ai" aria-selected="true">Configuración de IA</button>
       <button type="button" role="tab" id="admin-tab-entries" aria-controls="admin-pane-entries" aria-selected="false" tabindex="-1">Tarjetas</button>
       <button type="button" role="tab" id="admin-tab-data" aria-controls="admin-pane-data" aria-selected="false" tabindex="-1">Carga de datos</button>
+      <button type="button" role="tab" id="admin-tab-statistics" aria-controls="admin-pane-statistics" aria-selected="false" tabindex="-1">Estadísticas</button>
     </div>
 
     <section class="admin-pane" role="tabpanel" id="admin-pane-ai" aria-labelledby="admin-tab-ai">
@@ -200,8 +201,44 @@
     </div>
       </section>
     </section>
+
+    <section class="admin-pane" role="tabpanel" id="admin-pane-statistics" aria-labelledby="admin-tab-statistics" hidden>
+      <section class="panel" aria-labelledby="statisticsTitle">
+        <div class="statistics-head">
+          <div><h2 id="statisticsTitle">Actividad y generaciones</h2><p class="section-intro">Métricas anónimas y orientativas registradas por el servidor.</p></div>
+          <label for="statisticsRange">Periodo<select id="statisticsRange"><option value="7d">7 días</option><option value="30d" selected>30 días</option><option value="90d">90 días</option><option value="all">Todo</option></select></label>
+        </div>
+        <p id="statisticsStatus" class="catalog-status" aria-live="polite"></p>
+        <div class="kpi-grid" id="statisticsKpis"></div>
+        <div class="chart" id="generationChart" role="img" aria-label="Generaciones de IA por día"></div>
+        <div class="statistics-tables">
+          <section><h3>Proveedor y modelo</h3><div class="table-wrap"><table class="results"><thead><tr><th>Proveedor / modelo</th><th>Generaciones</th><th>Éxitos</th><th>Guardadas</th><th>Duración media</th></tr></thead><tbody id="providerStats"></tbody></table></div></section>
+          <section><h3>Tarjetas consumidas</h3><div class="table-wrap"><table class="results"><thead><tr><th>Tarjeta</th><th>Vistas</th><th>Interacciones</th><th>Navegadores</th></tr></thead><tbody id="consumedStats"></tbody></table></div></section>
+          <section><h3>Búsquedas frecuentes</h3><div class="table-wrap"><table class="results"><thead><tr><th>Término</th><th>Búsquedas</th><th>Sin resultados</th></tr></thead><tbody id="searchStats"></tbody></table></div></section>
+          <section><h3>Términos generados</h3><div class="table-wrap"><table class="results"><thead><tr><th>Término</th><th>Operación</th><th>Generaciones</th><th>Guardadas</th></tr></thead><tbody id="generatedStats"></tbody></table></div></section>
+        </div>
+      </section>
+
+      <section class="panel danger-zone" aria-labelledby="dangerTitle">
+        <h2 id="dangerTitle">Zona de peligro</h2>
+        <p class="section-intro">Cada operación es independiente, transaccional y requiere escribir una frase exacta.</p>
+        <p id="maintenanceStatus" class="catalog-status" aria-live="polite"></p>
+        <div class="danger-list" id="dangerList"></div>
+      </section>
+    </section>
   </div>
 </div>
+<dialog class="maintenance-dialog" id="maintenanceDialog" aria-labelledby="maintenanceDialogTitle">
+  <form method="dialog" id="maintenanceForm">
+    <h2 id="maintenanceDialogTitle"></h2>
+    <p id="maintenanceDialogText"></p>
+    <label for="maintenanceConfirmation">Escribe <strong id="maintenancePhrase"></strong> para confirmar
+      <input id="maintenanceConfirmation" autocomplete="off" spellcheck="false">
+    </label>
+    <p class="hint" id="maintenanceDialogStatus" aria-live="polite"></p>
+    <div class="actions"><button class="btn" value="cancel">Cancelar</button><button class="btn danger" id="maintenanceConfirm" type="submit" value="confirm" disabled>Confirmar limpieza</button></div>
+  </form>
+</dialog>
 <div class="toast" id="toast" role="status"></div>
 <script type="module" src="/src/pages/import/import.js"></script>
 </body>

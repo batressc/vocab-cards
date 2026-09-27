@@ -207,7 +207,7 @@ async function save(){
   try {
     const out = await authed('import', {
       method:'POST',
-      body: JSON.stringify({ sources:[{ name:r.source, text:r.text }], mode:'update', origin:'ia' })
+      body: JSON.stringify({ sources:[{ name:r.source, text:r.text }], mode:'update', origin:'ia', generationId:r.generationId })
     }, 'api/admin');
     const saved = out.items.filter(it => it.status === 'new' || it.status === 'update');
     dlg.close();

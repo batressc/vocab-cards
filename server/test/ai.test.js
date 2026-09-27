@@ -446,12 +446,27 @@ test('la edición usa la tarjeta autoritativa, exige una entrada y conserva prov
   assert.equal(result.provider, 'custom');
   assert.equal(result.model, 'model-x');
   assert.equal(result.items.length, 1);
+  assert.match(result.generationId, /^[0-9a-f-]{36}$/);
 
   for (const entries of [[], [{ head:'one', meaning:'Uno' }, { head:'two', meaning:'Dos' }]]) {
     await assert.rejects(generatePreview({}, store, {
       entryId:'old-head', provider:'custom', model:'model-x'
     }, { edit:true, generate:async () => ({ provider:'custom', model:'model-x', label:'X', text:JSON.stringify({ entries }) }) }), /exactamente una tarjeta válida/);
   }
+  const generationStats = store.statistics('all').generation;
+  assert.equal(generationStats.generations, 3);
+  assert.equal(generationStats.successful, 1);
+  assert.equal(generationStats.invalid, 2);
+});
+
+test('registra como provider_error una generación que falla sin guardar detalles remotos', async t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  await assert.rejects(generatePreview({}, store, {
+    term:'private term', provider:'custom', model:'model-x'
+  }, { generate:async () => { throw new Error('fallo remoto sensible'); } }), /fallo remoto/);
+  const stats = store.statistics('all');
+  assert.equal(stats.generation.provider_errors, 1);
+  assert.equal(stats.generatedTerms[0].term, 'private term');
 });
 
 test('la edición rechaza una selección implícita de proveedor o modelo', async t => {

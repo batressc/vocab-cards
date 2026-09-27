@@ -1,5 +1,5 @@
 {
-  "dbPath": "data/vocab.db",
+  "dbPath": "data/vocab-cards.db",
   "dataFolder": "data/seed",
   "includeSubfolders": false,
   "seedFromFolderWhenEmpty": true,

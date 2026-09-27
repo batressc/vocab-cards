@@ -1,4 +1,5 @@
 import { generateEntries } from './ai.js';
+import { randomUUID } from 'node:crypto';
 
 export const MAX_AI_INSTRUCTIONS = 2000;
 
@@ -22,17 +23,36 @@ export async function generatePreview(cfg, store, body, { edit = false, generate
   const hint = edit ? '' : text(body?.hint, 200);
   if (!term) throw Object.assign(new Error('Escribe la palabra o frase que quieres agregar.'), { status: 400 });
 
-  const ai = await generate(cfg, [{ term, hint }], {
-    ...selection,
-    instructions,
-    currentEntry,
-    opencodeSessionRequestLimit: body?.opencodeSessionRequestLimit,
-    store
+  const generationId = randomUUID();
+  const started = Date.now();
+  const record = (outcome, result = null) => store.recordAiGeneration({
+    id:generationId, createdAt:new Date().toISOString(), operation:edit ? 'edit' : 'create',
+    provider:selection.provider, model:selection.model,
+    term:term.toLocaleLowerCase('en').replace(/\s+/g, ' ').slice(0, 120),
+    entryId:edit ? currentEntry.id : null, outcome, durationMs:Date.now() - started,
+    itemCount:result?.items.length || 0,
+    validCount:result?.items.filter(item => item.entry && item.status !== 'error').length || 0
   });
-  const source = `IA · ${ai.label}`;
-  const result = store.plan([{ name: source, text: ai.text }], 'update', { withEntries: true });
-  if (edit && (result.items.length !== 1 || !result.items[0].entry || result.items[0].status === 'error')) {
-    throw Object.assign(new Error('La IA debe devolver exactamente una tarjeta válida para editar. Genera otra versión.'), { status: 422 });
+
+  try {
+    const ai = await generate(cfg, [{ term, hint }], {
+      ...selection,
+      instructions,
+      currentEntry,
+      opencodeSessionRequestLimit: body?.opencodeSessionRequestLimit,
+      store
+    });
+    const source = `IA · ${ai.label}`;
+    const result = store.plan([{ name: source, text: ai.text }], 'update', { withEntries: true });
+    const valid = result.items.filter(item => item.entry && item.status !== 'error').length;
+    if (edit && (result.items.length !== 1 || valid !== 1)) {
+      record('invalid', result);
+      throw Object.assign(new Error('La IA debe devolver exactamente una tarjeta válida para editar. Genera otra versión.'), { status: 422, generationRecorded:true });
+    }
+    record(valid ? 'success' : 'invalid', result);
+    return { generationId, provider:ai.provider, label:ai.label, model:ai.model, source, text:ai.text, ...result };
+  } catch (err) {
+    if (!err.generationRecorded) record('provider_error');
+    throw err;
   }
-  return { provider: ai.provider, label: ai.label, model: ai.model, source, text: ai.text, ...result };
 }

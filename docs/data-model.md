@@ -157,6 +157,28 @@ CREATE TABLE ai_settings (
 );
 ```
 
+La migración `v3` agrega cinco áreas persistentes:
+
+| Tabla | Propósito |
+|---|---|
+| `app_state` | Fila única con `suppress_seed_when_empty` y `data_epoch`. |
+| `usage_events` | Eventos semánticos anónimos de búsqueda, vista, giro, audio y cambios de aprendizaje/práctica. |
+| `learning_state` | Último estado “ya la sé” por cliente anónimo y tarjeta. |
+| `ai_generations` | Operación, proveedor/modelo, término normalizado, resultado, duración, conteos y conversión a guardado. |
+| `admin_audit` | Acciones administrativas estructuradas sin prompts, respuestas ni secretos. |
+
+Las tablas de métricas no tienen claves foráneas hacia `entries`: el historial
+sobrevive a eliminar una tarjeta individual o a limpiar todas las tarjetas. Los
+índices cubren fecha, tipo de evento, tarjeta y proveedor/modelo. Una vista de
+tarjeta se deduplica por sesión y tarjeta mediante un índice único parcial.
+
+`data_epoch` aumenta cuando limpiar tarjetas o reiniciar todo elimina tarjetas o
+activa por primera vez la inhibición del seed. El cliente lo compara
+con su valor local para descartar ids aprendidos que puedan haber quedado
+obsoletos. Esas operaciones también fijan `suppress_seed_when_empty = 1`; por
+ello `seedFromFolderWhenEmpty` no vuelve a cargar `data/seed` en el siguiente
+arranque. Importar contenido posteriormente no reactiva el seed automático.
+
 El servidor mantiene todas las tarjetas en memoria para filtrar y ordenar; cada
 escritura se hace en una transacción y luego refresca esa copia.
 La curación de modelos también se escribe en una transacción. Sus filas no se
@@ -175,9 +197,10 @@ Lectura (pública):
 
 | Método | Ruta | Cuerpo / respuesta |
 |---|---|---|
-| GET | `/api/vocab/meta` | `{ total, lastUpdated, pageSize, levels, kinds, ai: { enabled, provider?, label?, model?, default, providers: [{ id, label, stale, fetchedAt, models: [{ id, label, group?, category }] }], fetchedAt, refreshedAt, expiresAt, stale, errors: [{ provider, message }] } }`. `providers` contiene solo modelos visibles. |
+| GET | `/api/vocab/meta` | `{ total, lastUpdated, pageSize, levels, kinds, dataEpoch, ai: { enabled, provider?, label?, model?, default, providers: [{ id, label, stale, fetchedAt, models: [{ id, label, group?, category }] }], fetchedAt, refreshedAt, expiresAt, stale, errors: [{ provider, message }] } }`. `providers` contiene solo modelos visibles. |
 | POST | `/api/vocab/query` | Cuerpo: `{ skip, take, sort, dir, seed, q, levels, kinds, excludeIds }` → `{ total, skip, items: Tarjeta[], hasMore, exact: { id, head } \| null }` |
 | GET | `/api/vocab/export` | `{ $schema, exportedAt, entries: Tarjeta[] }` (descarga) |
+| POST | `/api/telemetry/events` | Lote anónimo acotado: `{ clientId, sessionId, events }` → `202 { ok, accepted }`. Tiene limitador independiente por IP. |
 
 - `sort`: `added`, `alpha`, `level`, `kind`, `length` o `random` (estable según `seed`). `dir`: `asc` o `desc`.
 - `levels` y `kinds`: `null` es todos; `[]` es ninguno.
@@ -191,14 +214,60 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | GET | `/api/admin/check` | `{ ok, total, dataFolder, maxImportBytes, ai, opencodeSessionLimit: { default, min, max } }`. `ai.providers` es la proyección visible y `ai.allProviders` es el snapshot completo con `visible` y `category` efectivos. |
 | POST | `/api/admin/ai/models/refresh` | Fuerza el descubrimiento y devuelve la misma vista administrativa completa, con frescura y errores sanitizados. |
 | PUT | `/api/admin/ai/curation` | `{ models: [{ provider, model, visible, category }], default: { provider, model } \| null }` → vista administrativa actualizada. Debe incluir exactamente una vez cada modelo del snapshot completo vigente. |
-| POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin }` → `{ items, summary, importId? }` |
+| POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin, generationId? }` → `{ items, summary, importId? }` |
 | POST | `/api/admin/import-folder` | `{ mode, dryRun }` → igual que `import` |
 | GET | `/api/admin/imports` | Últimas 15 filas de `imports` |
 | GET | `/api/admin/entries/:id` | Devuelve la tarjeta vigente cargada por el servidor. |
-| PUT | `/api/admin/entries/:id` | `{ entry, source? }` → `{ ok, entry, previousId, warnings }`. Reemplazo dirigido que permite renombrar y devuelve `404` si falta el objetivo o `409` ante colisión. |
+| PUT | `/api/admin/entries/:id` | `{ entry, source?, generationId? }` → `{ ok, entry, previousId, warnings }`. Reemplazo dirigido que permite renombrar y devuelve `404` si falta el objetivo o `409` ante colisión. |
 | DELETE | `/api/admin/entries/:id` | `{ ok, total }` |
-| POST | `/api/admin/ai/generate` | `{ term, hint, instructions?, provider, model, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. |
+| POST | `/api/admin/ai/generate` | `{ term, hint, instructions?, provider, model, opencodeSessionRequestLimit? }` → `{ generationId, provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. |
 | POST | `/api/admin/ai/edit` | `{ entryId, instructions?, provider, model, opencodeSessionRequestLimit? }` → la misma vista previa, con exactamente una entrada válida. La tarjeta actual se obtiene por `entryId` en el servidor. |
+| GET | `/api/admin/statistics?range=7d\|30d\|90d\|all` | KPIs, serie diaria y agregaciones por proveedor/modelo, tarjeta, búsqueda y término generado. |
+| GET | `/api/admin/maintenance/summary` | Conteos previos de tarjetas, auditoría, métricas, preferencias, epoch y estado de seed. |
+| POST | `/api/admin/maintenance/clear` | `{ scope, confirmation }`; `scope`: `cards`, `audit`, `metrics` o `all`. |
+
+### Telemetría y privacidad
+
+El navegador crea un UUID persistente de cliente y otro por sesión. El endpoint
+acepta lotes de hasta 50 eventos y rechaza campos desconocidos. Tipos válidos:
+`search`, `card_view`, `card_flip`, `audio_play`, `known_changed` y
+`practice_changed`. Solo se conservan el término normalizado de búsqueda, el id
+de tarjeta, conteos y estados booleanos necesarios. No se guardan IP,
+user-agent, tokens, hints, instrucciones/prompts ni respuestas de IA.
+
+Las generaciones se registran en el backend, incluso si el proveedor falla o el
+contenido no valida. Cada `generationId` es el UUID v4 canónico emitido por el
+backend y se consume una sola vez. Una generación con operación `create` solo
+puede correlacionarse al aplicar una importación (`import/apply`); una con
+operación `edit`, solo al reemplazar mediante `PUT /api/admin/entries/:id`
+(`replace`). La correlación y el consumo ocurren dentro de la misma transacción
+que completa `saved_count` y `saved_at`.
+
+Un guardado sin cambios se rechaza y no consume el `generationId`. Los errores
+públicos de correlación son:
+
+- `GENERATION_NOT_FOUND`: el `generationId` no existe.
+- `GENERATION_ALREADY_CONSUMED`: la generación ya se correlacionó con otro guardado.
+- `GENERATION_OPERATION_MISMATCH`: la operación de la generación no corresponde
+  al tipo de guardado.
+- `GENERATION_WITHOUT_CHANGES`: el guardado no produciría cambios.
+
+### Mantenimiento
+
+Las frases exactas son `ELIMINAR TARJETAS`, `LIMPIAR AUDITORÍA`,
+`LIMPIAR MÉTRICAS` y `REINICIAR TODO`. Todas las limpiezas son transaccionales;
+si el alcance ya está limpio y no queda estado que restablecer, repetirlas no
+crea auditoría ni incrementa `data_epoch`. Tienen un limitador más estricto y
+nunca ejecutan `VACUUM`.
+
+- `cards`: borra `entries`, inhibe el seed e incrementa el epoch solo cuando
+  había tarjetas o la inhibición todavía no estaba activa.
+- `audit`: borra `imports` y `admin_audit`, y deja una única marca `audit.cleared`.
+- `metrics`: borra `usage_events`, `learning_state` y `ai_generations`.
+- `all`: combina lo anterior, reinicia `ai_model_preferences`/`ai_settings` y deja una única marca `system.reset`.
+
+Ningún alcance borra el archivo SQLite, `config.json`, `.env` o `data/seed`.
+Limpiar métricas tampoco puede borrar `localStorage` en navegadores desconectados.
 
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.

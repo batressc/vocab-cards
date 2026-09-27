@@ -7,10 +7,19 @@ import { parseLenientJson, jsonErrorLine, extractJsonBlocks } from './lenient-js
 const SORTS = new Set(['added', 'alpha', 'level', 'kind', 'length', 'random']);
 export const AI_MODEL_CATEGORIES = Object.freeze(['unclassified', 'efficient', 'balanced', 'advanced']);
 const AI_MODEL_CATEGORY_SET = new Set(AI_MODEL_CATEGORIES);
+const GENERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const validProviderId = value => typeof value === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/.test(value);
 const validModelId = value => typeof value === 'string' && value.length > 0 && value.length <= 300 && value.trim() === value && !/[\u0000-\u001f\u007f]/.test(value);
 const modelKey = (provider, model) => `${provider}\u0000${model}`;
+
+export function normalizeGenerationId(value) {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || !GENERATION_ID.test(value)) {
+    throw Object.assign(new TypeError('El identificador de generación no es válido.'), { status:400, code:'INVALID_GENERATION_ID' });
+  }
+  return value;
+}
 
 /** Hash FNV-1a con mezcla final: orden aleatorio estable para una semilla. */
 function mix(seed, id) {
@@ -56,7 +65,8 @@ export class VocabStore {
       lastUpdated: this.#lastUpdated,
       pageSize,
       levels: count('level'),
-      kinds: count('kind')
+      kinds: count('kind'),
+      dataEpoch: this.#sql.appState.get().data_epoch
     };
   }
 
@@ -190,11 +200,14 @@ export class VocabStore {
   }
 
   /** Igual que plan(), pero guarda en una transacción y registra la importación. */
-  apply(sources, mode, origin) {
+  apply(sources, mode, origin, { generationId } = {}) {
+    generationId = normalizeGenerationId(generationId);
     const result = this.plan(sources, mode);
     const now = new Date().toISOString();
 
     this.#transaction(() => {
+      const s = result.summary;
+      if (generationId) this.#consumeGeneration(generationId, 'create', s.new + s.update, now);
       for (const it of result.items) {
         if (it.status === 'new') {
           this.#sql.insert.run({ id: it.id, data: it.json, addedAt: it.addedAt || now, now, source: it.source });
@@ -202,7 +215,6 @@ export class VocabStore {
           this.#sql.update.run({ id: it.id, data: it.json, addedAt: it.addedAt, now, source: it.source });
         }
       }
-      const s = result.summary;
       const info = this.#sql.logImport.run({
         createdAt: now, origin, mode,
         sources: [...new Set(sources.map(x => x.name))].join(', ').slice(0, 500),
@@ -216,13 +228,20 @@ export class VocabStore {
   }
 
   remove(id) {
-    const changes = this.#sql.remove.run(String(id)).changes;
+    let changes = 0;
+    this.#transaction(() => {
+      changes = this.#sql.remove.run(String(id)).changes;
+      if (changes) this.#sql.insertAudit.run({
+        createdAt:new Date().toISOString(), action:'entry.deleted', detail:JSON.stringify({ id:String(id).slice(0, 120) })
+      });
+    });
     if (changes) this.refresh();
     return changes > 0;
   }
 
   /** Reemplaza exactamente una tarjeta y permite cambiar su id sin crear duplicados. */
-  replace(originalId, raw, source = 'Edición con IA') {
+  replace(originalId, raw, source = 'Edición con IA', { generationId } = {}) {
+    generationId = normalizeGenerationId(generationId);
     const originalKey = String(originalId).toLowerCase();
     const current = this.#byId.get(originalKey);
     if (!current) throw Object.assign(new Error('La tarjeta que quieres editar ya no existe.'), { status: 404, code: 'ENTRY_NOT_FOUND' });
@@ -237,6 +256,7 @@ export class VocabStore {
     const now = new Date().toISOString();
     try {
       this.#transaction(() => {
+        if (generationId) this.#consumeGeneration(generationId, 'edit', 1, now);
         const result = this.#sql.replaceById.run({
           originalId: current.id,
           nextId: normalized.entry.id,
@@ -245,6 +265,9 @@ export class VocabStore {
           source: String(source || 'Edición con IA').slice(0, 500)
         });
         if (result.changes !== 1) throw Object.assign(new Error('La tarjeta cambió mientras se guardaba. Recarga e inténtalo de nuevo.'), { status: 409, code: 'ENTRY_CHANGED' });
+        this.#sql.insertAudit.run({
+          createdAt:now, action:'entry.replaced', detail:JSON.stringify({ previousId:current.id, id:normalized.entry.id, generationId:generationId || null })
+        });
       });
     } catch (err) {
       if (/UNIQUE constraint failed/i.test(err.message)) throw Object.assign(new Error(`Ya existe otra tarjeta con el id “${normalized.entry.id}”. Cambia el término y vuelve a generar.`), { status: 409, code: 'ENTRY_ID_COLLISION' });
@@ -254,8 +277,153 @@ export class VocabStore {
     return { entry: this.get(normalized.entry.id), previousId: current.id, warnings: normalized.warnings };
   }
 
+  #consumeGeneration(id, operation, savedCount, savedAt) {
+    const result = this.#sql.markGenerationSaved.run({ id, operation, savedCount, savedAt });
+    if (result.changes === 1) return;
+
+    const generation = this.#sql.generationCorrelation.get(id);
+    if (!generation) {
+      throw Object.assign(new Error('La generación indicada no existe.'), { status:400, code:'GENERATION_NOT_FOUND' });
+    }
+    if (generation.operation !== operation) {
+      throw Object.assign(new Error('La generación indicada no corresponde a este tipo de guardado.'), {
+        status:400, code:'GENERATION_OPERATION_MISMATCH'
+      });
+    }
+    if (generation.saved_count !== 0 || generation.saved_at !== null) {
+      throw Object.assign(new Error('La generación indicada ya fue consumida y no puede reutilizarse.'), {
+        status:400, code:'GENERATION_ALREADY_CONSUMED'
+      });
+    }
+    throw Object.assign(new Error('La generación no produjo cambios para guardar; no se consumió.'), {
+      status:400, code:'GENERATION_WITHOUT_CHANGES'
+    });
+  }
+
   history(limit = 15) {
     return this.#sql.history.all(limit);
+  }
+
+  /* ------------------------------------------------ métricas y mantenimiento */
+
+  shouldSeedWhenEmpty() {
+    return !this.#sql.appState.get().suppress_seed_when_empty;
+  }
+
+  recordUsage(batch) {
+    const createdAt = new Date().toISOString();
+    let accepted = 0;
+    this.#transaction(() => {
+      for (const event of batch.events) {
+        const result = this.#sql.insertUsage.run({
+          createdAt, clientId:batch.clientId, sessionId:batch.sessionId, type:event.type,
+          entryId:event.entryId, term:event.term, resultCount:event.resultCount, value:event.value
+        });
+        accepted += Number(result.changes);
+        if (event.type === 'known_changed') this.#sql.upsertLearning.run({
+          clientId:batch.clientId, entryId:event.entryId, value:event.value, createdAt
+        });
+      }
+    });
+    return { accepted };
+  }
+
+  recordAiGeneration(generation) {
+    this.#sql.insertGeneration.run(generation);
+  }
+
+  maintenanceSummary() {
+    const count = table => this.#db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+    const state = this.#sql.appState.get();
+    return {
+      cards:count('entries'), imports:count('imports'), audit:count('admin_audit'),
+      usageEvents:count('usage_events'), learningStates:count('learning_state'), aiGenerations:count('ai_generations'),
+      aiPreferences:count('ai_model_preferences'), dataEpoch:state.data_epoch,
+      seedSuppressed:Boolean(state.suppress_seed_when_empty)
+    };
+  }
+
+  clearMaintenance(scope) {
+    const allowed = new Set(['cards', 'audit', 'metrics', 'all']);
+    if (!allowed.has(scope)) throw new TypeError('El alcance de limpieza no es válido.');
+    const before = this.maintenanceSummary();
+    const marker = scope === 'all' ? 'system.reset' : scope === 'audit' ? 'audit.cleared' : `maintenance.${scope}.cleared`;
+    const cardStateChanges = (scope === 'cards' || scope === 'all') && (before.cards > 0 || !before.seedSuppressed);
+    const auditChanges = (scope === 'audit' || scope === 'all') && (before.imports > 0 || before.audit > 1 || Boolean(
+      this.#db.prepare('SELECT 1 FROM admin_audit WHERE action <> ? LIMIT 1').get(marker)
+    ));
+    const metricChanges = (scope === 'metrics' || scope === 'all') && (before.usageEvents > 0 || before.learningStates > 0 || before.aiGenerations > 0);
+    const aiStateChanges = scope === 'all' && (before.aiPreferences > 0 || Boolean(this.#sql.aiDefault.get().default_provider));
+    const changed = cardStateChanges || auditChanges || metricChanges || aiStateChanges;
+    if (!changed) return { scope, changed:false, removed:this.#removedCounts('', before), summary:before };
+
+    const now = new Date().toISOString();
+    this.#transaction(() => {
+      if (scope === 'cards' || scope === 'all') {
+        this.#db.exec('DELETE FROM entries');
+        if (cardStateChanges) this.#db.prepare('UPDATE app_state SET suppress_seed_when_empty = 1, data_epoch = data_epoch + 1 WHERE id = 1').run();
+      }
+      if (scope === 'audit' || scope === 'all') this.#db.exec('DELETE FROM imports; DELETE FROM admin_audit');
+      if (scope === 'metrics' || scope === 'all') this.#db.exec('DELETE FROM usage_events; DELETE FROM learning_state; DELETE FROM ai_generations');
+      if (scope === 'all') {
+        this.#db.exec('DELETE FROM ai_model_preferences');
+        this.#sql.updateAiDefault.run({ provider:null, model:null });
+      }
+      this.#sql.insertAudit.run({
+        createdAt:now,
+        action:marker,
+        detail:JSON.stringify({ scope, removed:this.#removedCounts(scope, before) })
+      });
+    });
+    if (scope === 'cards' || scope === 'all') this.refresh();
+    return { scope, changed:true, removed:this.#removedCounts(scope, before), summary:this.maintenanceSummary() };
+  }
+
+  #removedCounts(scope, before) {
+    return {
+      cards:scope === 'cards' || scope === 'all' ? before.cards : 0,
+      imports:scope === 'audit' || scope === 'all' ? before.imports : 0,
+      audit:scope === 'audit' || scope === 'all' ? before.audit : 0,
+      usageEvents:scope === 'metrics' || scope === 'all' ? before.usageEvents : 0,
+      learningStates:scope === 'metrics' || scope === 'all' ? before.learningStates : 0,
+      aiGenerations:scope === 'metrics' || scope === 'all' ? before.aiGenerations : 0,
+      aiPreferences:scope === 'all' ? before.aiPreferences : 0
+    };
+  }
+
+  statistics(range = '30d') {
+    const days = { '7d':7, '30d':30, '90d':90, all:null }[range];
+    if (days === undefined) throw new TypeError('El periodo solicitado no es válido.');
+    const since = days === null ? null : new Date(Date.now() - days * 86_400_000).toISOString();
+    const params = { since };
+    const one = sql => this.#db.prepare(sql).get(params);
+    const all = sql => this.#db.prepare(sql).all(params);
+    const usage = one(`SELECT COUNT(*) events, COUNT(DISTINCT client_id) clients, COUNT(DISTINCT session_id) sessions,
+      SUM(event_type='card_view') card_views, SUM(event_type='card_flip') flips, SUM(event_type='audio_play') audio_plays,
+      SUM(event_type='search') searches, SUM(event_type='search' AND result_count=0) no_result_searches,
+      SUM(event_type='known_changed') known_changes, SUM(event_type='practice_changed') practice_changes
+      FROM usage_events WHERE (@since IS NULL OR created_at >= @since)`);
+    const generation = one(`SELECT COUNT(*) generations, SUM(outcome='success') successful, SUM(outcome='invalid') invalid,
+      SUM(outcome='provider_error') provider_errors, COALESCE(SUM(saved_count),0) saved_cards,
+      ROUND(AVG(duration_ms)) average_duration_ms
+      FROM ai_generations WHERE (@since IS NULL OR created_at >= @since)`);
+    return {
+      range, since, usage, generation,
+      daily:all(`SELECT substr(created_at,1,10) day, COUNT(*) generations, SUM(outcome='success') successful, COALESCE(SUM(saved_count),0) saved
+        FROM ai_generations WHERE (@since IS NULL OR created_at >= @since) GROUP BY day ORDER BY day`),
+      providers:all(`SELECT provider, model, COUNT(*) generations, SUM(outcome='success') successful, COALESCE(SUM(saved_count),0) saved,
+        ROUND(AVG(duration_ms)) average_duration_ms FROM ai_generations WHERE (@since IS NULL OR created_at >= @since)
+        GROUP BY provider, model ORDER BY generations DESC, provider, model LIMIT 25`),
+      consumed:all(`SELECT entry_id, SUM(event_type='card_view') views,
+        SUM(event_type IN ('card_flip','audio_play','known_changed')) interactions, COUNT(DISTINCT client_id) clients FROM usage_events
+        WHERE entry_id IS NOT NULL AND (@since IS NULL OR created_at >= @since)
+        GROUP BY entry_id ORDER BY views DESC, interactions DESC, entry_id LIMIT 25`),
+      searches:all(`SELECT term, COUNT(*) searches, SUM(result_count=0) no_results FROM usage_events
+        WHERE event_type='search' AND (@since IS NULL OR created_at >= @since) GROUP BY term ORDER BY searches DESC, term LIMIT 25`),
+      generatedTerms:all(`SELECT term, operation, COUNT(*) generations, SUM(outcome='success') successful, COALESCE(SUM(saved_count),0) saved
+        FROM ai_generations WHERE (@since IS NULL OR created_at >= @since) GROUP BY term, operation ORDER BY generations DESC, term LIMIT 25`),
+      learning:{ known:one('SELECT COUNT(*) known FROM learning_state WHERE known=1 AND (@since IS NULL OR updated_at >= @since)').known }
+    };
   }
 
   /* ------------------------------------------------------- curación de IA */
@@ -330,6 +498,10 @@ export class VocabStore {
         provider: item.provider, model: item.model, visible: item.visible ? 1 : 0, category: item.category
       });
       this.#sql.updateAiDefault.run({ provider: nextDefault?.provider ?? null, model: nextDefault?.model ?? null });
+      this.#sql.insertAudit.run({
+        createdAt:new Date().toISOString(), action:'ai.curation.updated',
+        detail:JSON.stringify({ models:updates.size, visible:visible.length, default:nextDefault || null })
+      });
     });
     return this.projectAiCatalog(snapshot, { admin: true });
   }

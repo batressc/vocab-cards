@@ -27,7 +27,7 @@ const hashEntryId = () => location.hash.startsWith('#entries/') ? decodeURICompo
 const state = {
   token: store.get(ADMIN_TOKEN_KEY, ''),
   info: null,               // respuesta de /api/admin/check
-  adminTab: location.hash === '#data' ? 'data' : hashEntryId() ? 'entries' : 'ai',
+  adminTab: location.hash === '#data' ? 'data' : location.hash === '#statistics' ? 'statistics' : hashEntryId() ? 'entries' : 'ai',
   tab: 'text',
   files: [],                // [{ file, text?, error? }]
   review: null,             // último resultado de revisión
@@ -397,7 +397,7 @@ $('#authForm').addEventListener('submit', e => {
 $('#logout').addEventListener('click', () => logout());
 
 /* ================= Pestañas ================= */
-const ADMIN_TABS = ['ai', 'entries', 'data'];
+const ADMIN_TABS = ['ai', 'entries', 'data', 'statistics'];
 function selectAdminTab(name, focus = false){
   state.adminTab = ADMIN_TABS.includes(name) ? name : 'ai';
   for (const tabName of ADMIN_TABS) {
@@ -409,9 +409,11 @@ function selectAdminTab(name, focus = false){
   }
   const hash = state.adminTab === 'data' ? '#data'
     : state.adminTab === 'entries' ? (state.entries.selectedId ? `#entries/${encodeURIComponent(state.entries.selectedId)}` : '#entries')
+    : state.adminTab === 'statistics' ? '#statistics'
     : '#ai';
   history.replaceState(null, '', hash);
   if (state.adminTab === 'entries' && state.info && !state.entries.loading) loadEntries();
+  if (state.adminTab === 'statistics' && state.info) loadStatistics();
 }
 
 document.querySelector('.admin-tabs').addEventListener('click', e => {
@@ -584,7 +586,7 @@ async function generateEntryEdit(){
       opencodeSessionRequestLimit:store.get(OPENCODE_SESSION_LIMIT_KEY)
     }) });
     const candidate = result.items[0].entry;
-    state.entries.preview = { entry:candidate, source:result.source };
+    state.entries.preview = { entry:candidate, source:result.source, generationId:result.generationId };
     $('#entryCandidateContent').innerHTML = cardHTML(candidate, { admin:false });
     setEntryPreviewLoading(false);
     $('#entryPreviewStatus').textContent = 'La nueva versión está lista para revisar.';
@@ -609,7 +611,7 @@ $('#entrySave').addEventListener('click', async () => {
   setEntryBusy(true);
   try {
     const result = await adminApi(`entries/${encodeURIComponent(current.id)}`, {
-      method:'PUT', body:JSON.stringify({ entry:preview.entry, source:preview.source })
+      method:'PUT', body:JSON.stringify({ entry:preview.entry, source:preview.source, generationId:preview.generationId })
     });
     if (result.previousId !== result.entry.id) {
       const known = new Set(store.get('vocab-known', []));
@@ -830,6 +832,109 @@ async function loadHistory(){
       </tr>`).join('') : '<tr><td colspan="7" class="muted">Todavía no hay importaciones.</td></tr>';
   } catch { /* el error ya se mostró */ }
 }
+
+/* ================= Estadísticas y mantenimiento ================= */
+const n = value => Number(value || 0).toLocaleString('es');
+const emptyRow = columns => `<tr><td colspan="${columns}" class="muted">Sin datos en este periodo.</td></tr>`;
+
+async function loadStatistics(){
+  const status = $('#statisticsStatus');
+  status.textContent = 'Cargando estadísticas…';
+  try {
+    const [stats, maintenance] = await Promise.all([
+      adminApi(`statistics?range=${encodeURIComponent($('#statisticsRange').value)}`),
+      adminApi('maintenance/summary')
+    ]);
+    renderStatistics(stats);
+    renderMaintenance(maintenance);
+    status.textContent = stats.since ? `Datos desde ${fmtDateTime(stats.since)}.` : 'Todo el historial disponible.';
+  } catch (err) { status.textContent = err.message; }
+}
+
+function renderStatistics(stats){
+  const usage = stats.usage || {}, generation = stats.generation || {};
+  const conversion = generation.generations ? Math.round(Number(generation.saved_cards || 0) * 100 / Number(generation.generations)) : 0;
+  const kpis = [
+    ['Tarjetas vistas', usage.card_views], ['Interacciones', Number(usage.flips || 0) + Number(usage.audio_plays || 0)],
+    ['Búsquedas', usage.searches], ['Sin resultados', usage.no_result_searches],
+    ['Generaciones IA', generation.generations], ['Conversión a guardado', `${conversion}%`],
+    ['Tarjetas generadas y guardadas', generation.saved_cards], ['Aprendidas activas', stats.learning?.known]
+  ];
+  $('#statisticsKpis').innerHTML = kpis.map(([label, value]) => `<article><strong>${typeof value === 'string' ? esc(value) : n(value)}</strong><span>${esc(label)}</span></article>`).join('');
+
+  const max = Math.max(1, ...(stats.daily || []).map(row => Number(row.generations)));
+  $('#generationChart').innerHTML = (stats.daily || []).length ? stats.daily.map(row => `
+    <div class="chart-day" title="${esc(row.day)}: ${n(row.generations)} generaciones, ${n(row.saved)} guardadas">
+      <span style="height:${Math.max(4, Number(row.generations) * 100 / max)}%"></span><small>${esc(row.day.slice(5))}</small>
+    </div>`).join('') : '<p class="muted">Todavía no hay generaciones en este periodo.</p>';
+
+  $('#providerStats').innerHTML = stats.providers.length ? stats.providers.map(row => `<tr><td><b>${esc(row.provider)}</b><br><span class="muted">${esc(row.model)}</span></td><td class="num">${n(row.generations)}</td><td class="num">${n(row.successful)}</td><td class="num">${n(row.saved)}</td><td class="num">${row.average_duration_ms === null ? '—' : `${n(row.average_duration_ms)} ms`}</td></tr>`).join('') : emptyRow(5);
+  $('#consumedStats').innerHTML = stats.consumed.length ? stats.consumed.map(row => `<tr><td>${esc(row.entry_id)}</td><td class="num">${n(row.views)}</td><td class="num">${n(row.interactions)}</td><td class="num">${n(row.clients)}</td></tr>`).join('') : emptyRow(4);
+  $('#searchStats').innerHTML = stats.searches.length ? stats.searches.map(row => `<tr><td>${esc(row.term)}</td><td class="num">${n(row.searches)}</td><td class="num">${n(row.no_results)}</td></tr>`).join('') : emptyRow(3);
+  $('#generatedStats').innerHTML = stats.generatedTerms.length ? stats.generatedTerms.map(row => `<tr><td>${esc(row.term)}</td><td>${row.operation === 'edit' ? 'Edición' : 'Creación'}</td><td class="num">${n(row.generations)}</td><td class="num">${n(row.saved)}</td></tr>`).join('') : emptyRow(4);
+}
+
+const MAINTENANCE = {
+  cards:{ title:'Eliminar tarjetas', phrase:'ELIMINAR TARJETAS', text:'Borra todas las tarjetas, incrementa la versión de datos e impide que los ejemplos reaparezcan al reiniciar. Conserva métricas, auditoría y configuración de IA.' },
+  audit:{ title:'Limpiar auditoría', phrase:'LIMPIAR AUDITORÍA', text:'Borra el historial de importaciones y la auditoría administrativa. Después crea una única marca audit.cleared. Conserva tarjetas y métricas.' },
+  metrics:{ title:'Limpiar métricas', phrase:'LIMPIAR MÉTRICAS', text:'Borra eventos de uso, estados de aprendizaje y generaciones IA. Conserva tarjetas y auditoría. No puede borrar localStorage de navegadores desconectados.' },
+  all:{ title:'Reiniciar todo', phrase:'REINICIAR TODO', text:'Borra tarjetas, auditoría y métricas; reinicia la curación y el modelo predeterminado de IA. Inhibe el seed y deja una única marca system.reset. No borra SQLite, config.json, .env ni data/seed.' }
+};
+
+function renderMaintenance(summary){
+  $('#maintenanceStatus').textContent = `Estado actual: ${n(summary.cards)} tarjetas, ${n(summary.imports)} importaciones, ${n(summary.usageEvents)} eventos y ${n(summary.aiGenerations)} generaciones IA. Epoch ${n(summary.dataEpoch)}.`;
+  $('#dangerList').innerHTML = Object.entries(MAINTENANCE).map(([scope, item]) => `<article>
+    <div><h3>${esc(item.title)}</h3><p>${esc(item.text)}</p></div>
+    <button type="button" class="btn danger" data-maintenance="${scope}">${esc(item.title)}</button>
+  </article>`).join('');
+}
+
+let maintenanceScope = null;
+$('#dangerList').addEventListener('click', e => {
+  const button = e.target.closest('[data-maintenance]');
+  if (!button) return;
+  maintenanceScope = button.dataset.maintenance;
+  const item = MAINTENANCE[maintenanceScope];
+  $('#maintenanceDialogTitle').textContent = item.title;
+  $('#maintenanceDialogText').textContent = item.text;
+  $('#maintenancePhrase').textContent = item.phrase;
+  $('#maintenanceConfirmation').value = '';
+  $('#maintenanceConfirm').disabled = true;
+  $('#maintenanceDialogStatus').textContent = '';
+  $('#maintenanceDialog').showModal();
+  $('#maintenanceConfirmation').focus();
+});
+
+$('#maintenanceConfirmation').addEventListener('input', e => {
+  $('#maintenanceConfirm').disabled = e.target.value !== MAINTENANCE[maintenanceScope]?.phrase;
+});
+
+$('#maintenanceForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (e.submitter?.value === 'cancel') { $('#maintenanceDialog').close(); return; }
+  const item = MAINTENANCE[maintenanceScope];
+  if (!item || $('#maintenanceConfirmation').value !== item.phrase) return;
+  $('#maintenanceConfirm').disabled = true;
+  $('#maintenanceDialogStatus').textContent = 'Ejecutando limpieza…';
+  try {
+    const result = await adminApi('maintenance/clear', {
+      method:'POST', body:JSON.stringify({ scope:maintenanceScope, confirmation:item.phrase })
+    });
+    if (maintenanceScope === 'cards' || maintenanceScope === 'all') store.set('vocab-known', []);
+    if (maintenanceScope === 'all') store.set(OPENCODE_SESSION_LIMIT_KEY, state.info.opencodeSessionLimit.default);
+    $('#maintenanceDialog').close();
+    state.info = await adminApi('check');
+    showSession();
+    renderMaintenance(result.summary);
+    await loadStatistics();
+    toast(`${item.title}: operación completada.`);
+  } catch (err) {
+    $('#maintenanceDialogStatus').textContent = err.message;
+    $('#maintenanceConfirm').disabled = false;
+  }
+});
+
+$('#statisticsRange').addEventListener('change', loadStatistics);
 
 /* ================= Arranque ================= */
 if (state.token) login(state.token); else $('#token').focus();

@@ -10,6 +10,7 @@ Otras funciones:
 - **Estudiar:** modo práctica y marcado de "ya la sé".
 - **Agregar tarjetas:** pegar el JSON que genera una IA, subir archivos o crearlas con IA directamente desde la búsqueda.
 - **Administrar tarjetas:** buscar, paginar, regenerar con instrucciones y proveedor/modelo explícitos, previsualizar, renombrar o eliminar.
+- **Medir y mantener:** estadísticas anónimas de estudio y generaciones IA, más limpiezas administrativas separadas para tarjetas, auditoría, métricas o todo el estado gestionado.
 
 ## Tecnologías
 
@@ -35,6 +36,8 @@ npm run dev               # http://localhost:3000
 En Windows (PowerShell), usa `Copy-Item .env.example .env` en lugar de `cp`.
 
 La primera vez se crea `data/vocab.db` y se cargan los ejemplos de `data/seed/`.
+Si un administrador elimina todas las tarjetas desde la Zona de peligro, esa
+decisión queda persistida y los ejemplos no reaparecen al reiniciar.
 
 | Comando | Qué hace |
 |---|---|
@@ -159,6 +162,28 @@ permiten pedir otro contexto, ampliar una explicación o exigir un ejemplo. El
 texto entre `<<` y `>>` se trata como una unidad semántica completa y esos
 delimitadores no se copian a la tarjeta. La antigua clave local
 `vocab-ai-default-model` se elimina y ya no es una fuente de configuración.
+
+En **Administración → Estadísticas** se puede elegir 7, 30 o 90 días, o todo el
+historial. El panel resume vistas e interacciones con tarjetas, búsquedas y
+búsquedas sin resultados, aprendizaje, generaciones diarias, resultados y
+duración por proveedor/modelo, términos generados y conversión a tarjetas
+guardadas. Son métricas orientativas: cada navegador usa un UUID anónimo
+persistente y un UUID por sesión. No se guardan IP, user-agent, tokens, prompts,
+hints ni respuestas de IA; únicamente términos normalizados de búsqueda o
+generación y los campos mínimos del evento.
+
+La misma pestaña contiene la **Zona de peligro**. Antes de actuar muestra los
+conteos vigentes, explica qué se conserva y exige una frase exacta. Se puede
+limpiar por separado tarjetas, auditoría (`imports` y acciones administrativas),
+métricas o reiniciar todo. Limpiar tarjetas incrementa una versión de datos que
+descarta referencias locales obsoletas e inhibe permanentemente el seed
+automático para esa base. Repetir una limpieza ya efectiva no cambia esa versión
+ni crea otra marca si no queda nada del alcance por limpiar o restablecer.
+Limpiar auditoría o reiniciar todo deja una única marca de la operación. El
+reinicio total también restablece la curación y el
+modelo IA predeterminado, pero nunca borra el archivo SQLite, `config.json`,
+`.env` ni `data/seed`, ni ejecuta `VACUUM`. La limpieza de métricas no puede
+borrar `localStorage` en navegadores desconectados.
 
 La página principal incluye **Desbloquear administración**. Solo después de
 validar la clave con `/api/admin/check` aparecen las acciones de edición y
