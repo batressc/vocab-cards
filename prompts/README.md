@@ -7,18 +7,28 @@
 ## Cómo lo usa la aplicación
 
 `server/prompt.js` lee `vocab-entry.prompt.md` en cada generación y lo envía
-como **mensaje de sistema**. El mensaje de usuario es la lista de términos:
+como **mensaje de sistema**. El mensaje de usuario contiene la lista de términos
+y, cuando corresponda, instrucciones adicionales y la tarjeta actual:
 
 ```
 LISTA:
 take off (despegar un avión)
 run into
+
+INSTRUCCIONES ADICIONALES:
+Incluye un ejemplo en una reunión de trabajo.
 ```
 
 Cada línea es un término; lo que va entre paréntesis es la aclaración de
 sentido que el usuario escribe en el diálogo "Crear con IA". Los cambios al
 archivo se aplican sin reiniciar el servidor. La ruta se puede cambiar con
 `ai.promptFile` en `config.json`.
+
+El texto entre `<<` y `>>` representa una sola unidad semántica, aunque incluya
+varias frases. Los delimitadores no forman parte del contenido generado. En una
+edición, el servidor agrega `TARJETA ACTUAL` desde SQLite y exige que la IA
+devuelva exactamente una tarjeta; el navegador no envía una supuesta copia de
+la tarjeta vigente.
 
 ## Uso manual (ChatGPT, Gemini, Claude…)
 

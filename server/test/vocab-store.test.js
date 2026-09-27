@@ -85,6 +85,30 @@ test('eliminar y exportar', t => {
   assert.equal(exp.entries[0].source, undefined);
 });
 
+test('get obtiene una copia y replace renombra atómicamente conservando addedAt', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('old head', { addedAt:'2026-01-01T00:00:00Z' })])], 'update', 'texto');
+  const copy = store.get('old-head');
+  copy.head = 'mutada';
+  assert.equal(store.get('old-head').head, 'old head');
+
+  const result = store.replace('old-head', entry('new head', { meaning:'Nuevo significado' }));
+  assert.equal(result.previousId, 'old-head');
+  assert.equal(store.get('old-head'), null);
+  assert.equal(result.entry.id, 'new-head');
+  assert.equal(result.entry.addedAt, '2026-01-01T00:00:00.000Z');
+  assert.equal(result.entry.meaning, 'Nuevo significado');
+  assert.ok(result.entry.updatedAt);
+});
+
+test('replace rechaza colisión y objetivo ausente sin modificar registros', t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([source([entry('one'), entry('two')])], 'update', 'texto');
+  assert.throws(() => store.replace('one', entry('two')), error => error.status === 409 && error.code === 'ENTRY_ID_COLLISION');
+  assert.throws(() => store.replace('missing', entry('three')), error => error.status === 404 && error.code === 'ENTRY_NOT_FOUND');
+  assert.deepEqual(store.query({ sort:'alpha', dir:'asc' }).items.map(item => item.id), ['one', 'two']);
+});
+
 test('migra y persiste la curación global de modelos en SQLite', t => {
   const { store, path, cleanup } = tempStore();
   const snapshot = aiSnapshot();

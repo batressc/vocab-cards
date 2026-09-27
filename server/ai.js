@@ -132,7 +132,10 @@ export async function generateEntries(cfg, terms, options = {}) {
   if (!provider.enabled) throw new AiError(provider.reason, provider.status || 503);
 
   const system = await loadSystemPrompt(cfg);
-  const request = generationRequest(provider, system, userMessage(terms), terms);
+  const request = generationRequest(provider, system, userMessage(terms, {
+    instructions: options.instructions,
+    currentEntry: options.currentEntry
+  }), terms);
   if (provider.provider === 'opencode-go') {
     const limit = opencodeSessionLimit(options.opencodeSessionRequestLimit);
     request.headers['user-agent'] = OPENCODE_USER_AGENT;

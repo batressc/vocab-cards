@@ -32,3 +32,6 @@ No incluyas "addedAt".
 5. Ejemplos realistas de 5 a 14 palabras; las traducciones conservan el tono del original.
 6. No inventes datos: si dudas de una forma o un uso, no lo incluyas.
 7. Completa todos los campos de cada entrada.
+8. Trata todo texto encerrado entre `<<` y `>>` como UNA unidad semántica completa, aunque contenga varias palabras, frases u oraciones. Los delimitadores son solo notación de entrada: no los copies a `head` ni a ningún campo, salvo que las instrucciones adicionales pidan expresamente conservarlos.
+9. Si recibes una sección "INSTRUCCIONES ADICIONALES", aplícala para ampliar, cambiar o enfocar el contenido sin incumplir este contrato.
+10. Si recibes "TARJETA ACTUAL", estás editando esa tarjeta: devuelve exactamente una entrada completa con los cambios solicitados. Puedes cambiar `head` e `id`; no conserves el id anterior si el nuevo `head` exige otro según la regla del id.

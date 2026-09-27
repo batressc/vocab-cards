@@ -17,12 +17,13 @@ const STATUS = {
   error:     'Error'
 };
 const KIND_LABEL = { phrasal:'Phrasal verb', idiom:'Modismo', phrase:'Frase', onomatopoeia:'Onomatopeya', word:'Palabra', grammar:'Estructura' };
+const hashEntryId = () => location.hash.startsWith('#entries/') ? decodeURIComponent(location.hash.slice(9)) : '';
 
 /* ================= Estado ================= */
 const state = {
   token: store.get(ADMIN_TOKEN_KEY, ''),
   info: null,               // respuesta de /api/admin/check
-  adminTab: location.hash === '#data' ? 'data' : 'ai',
+  adminTab: location.hash === '#data' ? 'data' : hashEntryId() ? 'entries' : 'ai',
   tab: 'text',
   files: [],                // [{ file, text?, error? }]
   review: null,             // último resultado de revisión
@@ -30,7 +31,8 @@ const state = {
   busy: false,
   aiDraft: new Map(),
   aiFilters: { default:'', catalog:'' },
-  aiExpanded: { default:null, catalog:null }
+  aiExpanded: { default:null, catalog:null },
+  entries: { skip:0, take:12, total:0, q:'', selectedId:hashEntryId(), selected:null, preview:null, loading:false }
 };
 
 /* ================= API ================= */
@@ -70,8 +72,9 @@ function showSession(){
   $('#folderName').textContent = state.info.dataFolder;
   $('#limitHint').textContent = `Hasta ${fmtSize(state.info.maxImportBytes)} por archivo.`;
   resetAiDraft();
-  renderAiDefaultSettings();
-  selectAdminTab(state.adminTab);
+    renderAiDefaultSettings();
+    selectAdminTab(state.adminTab);
+    if (state.adminTab === 'entries') loadEntries().then(() => state.entries.selectedId && openEntry(state.entries.selectedId));
 }
 
 const MODEL_STAR = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></svg>';
@@ -390,7 +393,7 @@ $('#authForm').addEventListener('submit', e => {
 $('#logout').addEventListener('click', () => logout());
 
 /* ================= Pestañas ================= */
-const ADMIN_TABS = ['ai', 'data'];
+const ADMIN_TABS = ['ai', 'entries', 'data'];
 function selectAdminTab(name, focus = false){
   state.adminTab = ADMIN_TABS.includes(name) ? name : 'ai';
   for (const tabName of ADMIN_TABS) {
@@ -400,7 +403,11 @@ function selectAdminTab(name, focus = false){
     pane.hidden = !on;
     if (on && focus) tab.focus();
   }
-  history.replaceState(null, '', state.adminTab === 'data' ? '#data' : '#ai');
+  const hash = state.adminTab === 'data' ? '#data'
+    : state.adminTab === 'entries' ? (state.entries.selectedId ? `#entries/${encodeURIComponent(state.entries.selectedId)}` : '#entries')
+    : '#ai';
+  history.replaceState(null, '', hash);
+  if (state.adminTab === 'entries' && state.info && !state.entries.loading) loadEntries();
 }
 
 document.querySelector('.admin-tabs').addEventListener('click', e => {
@@ -413,6 +420,163 @@ document.querySelector('.admin-tabs').addEventListener('keydown', e => {
   const i = ADMIN_TABS.indexOf(state.adminTab);
   const next = e.key === 'Home' ? 0 : e.key === 'End' ? ADMIN_TABS.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + ADMIN_TABS.length) % ADMIN_TABS.length;
   selectAdminTab(ADMIN_TABS[next], true);
+});
+
+/* ================= Gestión de tarjetas ================= */
+async function queryEntries(){
+  const res = await fetch('api/vocab/query', {
+    method:'POST', headers:{ 'Content-Type':'application/json', Accept:'application/json' },
+    body:JSON.stringify({ q:state.entries.q || null, skip:state.entries.skip, take:state.entries.take, sort:'alpha', dir:'asc' })
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'No se pudieron cargar las tarjetas.');
+  return body;
+}
+
+async function loadEntries(){
+  if (state.entries.loading || state.adminTab !== 'entries') return;
+  state.entries.loading = true;
+  $('#entryGrid').innerHTML = '<p class="muted">Cargando tarjetas…</p>';
+  try {
+    const page = await queryEntries();
+    state.entries.total = page.total;
+    $('#entryCount').textContent = plural(page.total, 'tarjeta encontrada', 'tarjetas encontradas');
+    $('#entryGrid').innerHTML = page.items.length ? page.items.map(item => `
+      <button type="button" class="entry-tile${item.id === state.entries.selectedId ? ' selected' : ''}" data-entry-id="${esc(item.id)}">
+        <strong>${esc(item.head)}</strong><span>${esc(item.meaning || 'Sin significado')}</span>
+        <small>${esc(KIND_LABEL[item.kind] || item.kind)}${item.level ? ` · ${esc(item.level)}` : ''} · ${esc(item.id)}</small>
+      </button>`).join('') : '<p class="muted">No hay tarjetas que coincidan con la búsqueda.</p>';
+    const first = page.total ? state.entries.skip + 1 : 0;
+    const last = state.entries.skip + page.items.length;
+    $('#entryPage').textContent = page.total ? `${first}–${last} de ${page.total}` : 'Sin resultados';
+    $('#entryPrev').disabled = state.entries.skip === 0;
+    $('#entryNext').disabled = !page.hasMore;
+  } catch (err) {
+    $('#entryGrid').innerHTML = `<p class="bad">${esc(err.message)}</p>`;
+  } finally { state.entries.loading = false; }
+}
+
+function renderEntryModels(reset = false){
+  const providers = state.info.ai?.providers || [];
+  const fallback = resolveAiDefaultModel(state.info.ai);
+  const current = reset ? fallback : { provider:$('#entryProvider').value, model:$('#entryModel').value };
+  const providerId = providers.some(item => item.id === current?.provider) ? current.provider : fallback?.provider || providers[0]?.id || '';
+  $('#entryProvider').innerHTML = providers.map(provider => `<option value="${esc(provider.id)}"${provider.id === providerId ? ' selected' : ''}>${esc(provider.label)}</option>`).join('');
+  const provider = providers.find(item => item.id === providerId);
+  const modelId = provider?.models.some(item => item.id === current?.model) ? current.model : (providerId === fallback?.provider ? fallback.model : provider?.models[0]?.id);
+  $('#entryModel').innerHTML = (provider?.models || []).map(model => `<option value="${esc(model.id)}"${model.id === modelId ? ' selected' : ''}>${esc(model.label)}${model.group ? ` · ${esc(model.group)}` : ''}</option>`).join('');
+  $('#entryGenerate').disabled = !provider || !modelId;
+}
+
+async function openEntry(id){
+  try {
+    const entry = await adminApi(`entries/${encodeURIComponent(id)}`);
+    state.entries.selectedId = entry.id;
+    state.entries.selected = entry;
+    state.entries.preview = null;
+    $('#entryEditor').hidden = false;
+    $('#entryEditorCurrent').textContent = `${entry.head} · ${entry.id}`;
+    $('#entryInstructions').value = '';
+    $('#entryPreview').innerHTML = '';
+    $('#entryPreviewActions').hidden = true;
+    renderEntryModels(true);
+    selectAdminTab('entries');
+    loadEntries();
+    $('#entryInstructions').focus();
+  } catch (err) { toast(err.message); }
+}
+
+$('#entryGrid').addEventListener('click', e => {
+  const button = e.target.closest('[data-entry-id]');
+  if (button) openEntry(button.dataset.entryId);
+});
+$('#entryProvider').addEventListener('change', () => renderEntryModels());
+
+let entrySearchTimer;
+$('#entrySearch').addEventListener('input', e => {
+  clearTimeout(entrySearchTimer);
+  entrySearchTimer = setTimeout(() => { state.entries.q = e.target.value.trim(); state.entries.skip = 0; loadEntries(); }, 250);
+});
+$('#entryPrev').addEventListener('click', () => { state.entries.skip = Math.max(0, state.entries.skip - state.entries.take); loadEntries(); });
+$('#entryNext').addEventListener('click', () => { state.entries.skip += state.entries.take; loadEntries(); });
+
+function setEntryBusy(busy){
+  state.busy = busy;
+  for (const control of $('#entryEditor').querySelectorAll('button, textarea, select')) control.disabled = busy;
+  if (!busy) renderEntryModels();
+}
+
+async function generateEntryEdit(){
+  if (!state.entries.selected || state.busy) return;
+  setEntryBusy(true);
+  $('#entryPreviewActions').hidden = true;
+  $('#entryPreview').innerHTML = '<p><span class="spinner" aria-hidden="true"></span>Generando una nueva versión…</p>';
+  try {
+    const result = await adminApi('ai/edit', { method:'POST', body:JSON.stringify({
+      entryId:state.entries.selected.id,
+      instructions:$('#entryInstructions').value.trim(),
+      provider:$('#entryProvider').value,
+      model:$('#entryModel').value,
+      opencodeSessionRequestLimit:store.get(OPENCODE_SESSION_LIMIT_KEY)
+    }) });
+    const candidate = result.items[0].entry;
+    state.entries.preview = { entry:candidate, source:result.source };
+    $('#entryPreview').innerHTML = `<h3>Vista previa</h3><div class="entry-preview-card">
+      <strong>${esc(candidate.head)}</strong><span>${esc(candidate.meaning || 'Sin significado')}</span>
+      <dl><dt>Id</dt><dd>${esc(candidate.id)}</dd><dt>Tipo y nivel</dt><dd>${esc(KIND_LABEL[candidate.kind] || candidate.kind)} · ${esc(candidate.level || 'Sin nivel')}</dd><dt>Ejemplo</dt><dd>${esc(candidate.ex?.en || 'Sin ejemplo')}</dd></dl>
+    </div><p class="hint">Generado con ${esc(result.label)} (${esc(result.model)}).</p>`;
+    $('#entryPreviewActions').hidden = false;
+    $('#entrySave').focus();
+  } catch (err) {
+    state.entries.preview = null;
+    $('#entryPreview').innerHTML = `<p class="bad">${esc(err.message)}</p>`;
+  } finally { setEntryBusy(false); }
+}
+
+$('#entryEditForm').addEventListener('submit', e => { e.preventDefault(); generateEntryEdit(); });
+$('#entryRetry').addEventListener('click', generateEntryEdit);
+
+$('#entrySave').addEventListener('click', async () => {
+  const preview = state.entries.preview;
+  const current = state.entries.selected;
+  if (!preview || !current || state.busy) return;
+  setEntryBusy(true);
+  try {
+    const result = await adminApi(`entries/${encodeURIComponent(current.id)}`, {
+      method:'PUT', body:JSON.stringify({ entry:preview.entry, source:preview.source })
+    });
+    if (result.previousId !== result.entry.id) {
+      const known = new Set(store.get('vocab-known', []));
+      if (known.delete(result.previousId)) known.add(result.entry.id);
+      store.set('vocab-known', [...known]);
+    }
+    state.entries.selectedId = result.entry.id;
+    state.entries.selected = result.entry;
+    state.entries.preview = null;
+    $('#entryEditorCurrent').textContent = `${result.entry.head} · ${result.entry.id}`;
+    $('#entryPreviewActions').hidden = true;
+    $('#entryPreview').innerHTML = '<p class="done">Los cambios se guardaron correctamente.</p>';
+    selectAdminTab('entries');
+    await loadEntries();
+    toast(`Se guardó “${result.entry.head}”.`);
+  } catch (err) { toast(err.message); }
+  finally { setEntryBusy(false); }
+});
+
+$('#entryDelete').addEventListener('click', async () => {
+  const current = state.entries.selected;
+  if (!current || !confirm(`¿Eliminar “${current.head}”? Esta acción no se puede deshacer.`)) return;
+  setEntryBusy(true);
+  try {
+    await adminApi(`entries/${encodeURIComponent(current.id)}`, { method:'DELETE' });
+    const known = new Set(store.get('vocab-known', [])); known.delete(current.id); store.set('vocab-known', [...known]);
+    state.entries.selectedId = ''; state.entries.selected = null; state.entries.preview = null;
+    $('#entryEditor').hidden = true;
+    selectAdminTab('entries');
+    await loadEntries();
+    toast(`Se eliminó “${current.head}”.`);
+  } catch (err) { toast(err.message); }
+  finally { setEntryBusy(false); }
 });
 
 const TABS = ['text', 'files', 'folder'];

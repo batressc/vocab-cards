@@ -112,6 +112,12 @@ export class VocabStore {
     return e ? { id: e.id, head: e.head } : null;
   }
 
+  /** Devuelve la tarjeta vigente por id; la copia evita mutar el caché interno. */
+  get(id) {
+    const entry = this.#byId.get(String(id).toLowerCase());
+    return entry ? structuredClone(entry) : null;
+  }
+
   /* ----------------------------------------------------------- importación */
 
   /**
@@ -213,6 +219,39 @@ export class VocabStore {
     const changes = this.#sql.remove.run(String(id)).changes;
     if (changes) this.refresh();
     return changes > 0;
+  }
+
+  /** Reemplaza exactamente una tarjeta y permite cambiar su id sin crear duplicados. */
+  replace(originalId, raw, source = 'Edición con IA') {
+    const originalKey = String(originalId).toLowerCase();
+    const current = this.#byId.get(originalKey);
+    if (!current) throw Object.assign(new Error('La tarjeta que quieres editar ya no existe.'), { status: 404, code: 'ENTRY_NOT_FOUND' });
+    const normalized = normalizeEntry(raw);
+    if (normalized.error) throw Object.assign(new Error(`La tarjeta generada no es válida: ${normalized.error}`), { status: 400, code: 'INVALID_ENTRY' });
+
+    const nextKey = normalized.entry.id.toLowerCase();
+    if (nextKey !== originalKey && this.#byId.has(nextKey)) {
+      throw Object.assign(new Error(`Ya existe otra tarjeta con el id “${normalized.entry.id}”. Cambia el término y vuelve a generar.`), { status: 409, code: 'ENTRY_ID_COLLISION' });
+    }
+
+    const now = new Date().toISOString();
+    try {
+      this.#transaction(() => {
+        const result = this.#sql.replaceById.run({
+          originalId: current.id,
+          nextId: normalized.entry.id,
+          data: JSON.stringify(normalized.entry),
+          now,
+          source: String(source || 'Edición con IA').slice(0, 500)
+        });
+        if (result.changes !== 1) throw Object.assign(new Error('La tarjeta cambió mientras se guardaba. Recarga e inténtalo de nuevo.'), { status: 409, code: 'ENTRY_CHANGED' });
+      });
+    } catch (err) {
+      if (/UNIQUE constraint failed/i.test(err.message)) throw Object.assign(new Error(`Ya existe otra tarjeta con el id “${normalized.entry.id}”. Cambia el término y vuelve a generar.`), { status: 409, code: 'ENTRY_ID_COLLISION' });
+      throw err;
+    }
+    this.refresh();
+    return { entry: this.get(normalized.entry.id), previousId: current.id, warnings: normalized.warnings };
   }
 
   history(limit = 15) {

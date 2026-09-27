@@ -79,6 +79,7 @@ export function openDatabase(path) {
     all:        db.prepare('SELECT seq, id, data, added_at, updated_at, source FROM entries ORDER BY seq'),
     insert:     db.prepare('INSERT INTO entries (id, data, added_at, updated_at, source) VALUES (@id, @data, @addedAt, @now, @source)'),
     update:     db.prepare('UPDATE entries SET data = @data, updated_at = @now, source = @source, added_at = COALESCE(@addedAt, added_at) WHERE id = @id'),
+    replaceById: db.prepare('UPDATE entries SET id = @nextId, data = @data, updated_at = @now, source = @source WHERE id = @originalId'),
     remove:     db.prepare('DELETE FROM entries WHERE id = ?'),
     logImport:  db.prepare(`INSERT INTO imports (created_at, origin, sources, mode, inserted, updated, unchanged, skipped, errors)
                             VALUES (@createdAt, @origin, @sources, @mode, @inserted, @updated, @unchanged, @skipped, @errors)`),

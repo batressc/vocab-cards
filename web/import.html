@@ -39,6 +39,7 @@
   <div id="adminWorkspace" hidden>
     <div class="admin-tabs" role="tablist" aria-label="Secciones de administración">
       <button type="button" role="tab" id="admin-tab-ai" aria-controls="admin-pane-ai" aria-selected="true">Configuración de IA</button>
+      <button type="button" role="tab" id="admin-tab-entries" aria-controls="admin-pane-entries" aria-selected="false" tabindex="-1">Tarjetas</button>
       <button type="button" role="tab" id="admin-tab-data" aria-controls="admin-pane-data" aria-selected="false" tabindex="-1">Carga de datos</button>
     </div>
 
@@ -86,6 +87,45 @@
             <p class="hint" id="aiCatalogHint" aria-live="polite">Los cambios no se comparten hasta que los guardes.</p>
           </div>
         </form>
+      </section>
+    </section>
+
+    <section class="admin-pane" role="tabpanel" id="admin-pane-entries" aria-labelledby="admin-tab-entries" hidden>
+      <section class="panel" aria-labelledby="entriesTitle">
+        <div class="entries-head">
+          <div><h2 id="entriesTitle">Tarjetas guardadas</h2><p class="section-intro">Busca y selecciona una tarjeta para editarla con IA o eliminarla.</p></div>
+          <label class="entry-search" for="entrySearch"><span>Buscar tarjetas</span><input id="entrySearch" type="search" autocomplete="off" placeholder="Inglés, español, tipo o nivel"></label>
+        </div>
+        <p class="catalog-status" id="entryCount" aria-live="polite"></p>
+        <div class="entry-grid" id="entryGrid"></div>
+        <div class="entry-pagination">
+          <button class="btn" id="entryPrev" type="button">Anterior</button>
+          <span id="entryPage"></span>
+          <button class="btn" id="entryNext" type="button">Siguiente</button>
+        </div>
+      </section>
+
+      <section class="panel entry-editor" id="entryEditor" hidden aria-labelledby="entryEditorTitle">
+        <div class="entry-editor-head">
+          <div><h2 id="entryEditorTitle">Editar tarjeta con IA</h2><p class="section-intro" id="entryEditorCurrent"></p></div>
+          <button class="btn danger" id="entryDelete" type="button">Eliminar tarjeta</button>
+        </div>
+        <form id="entryEditForm" class="entry-edit-form">
+          <label>Instrucciones para la edición
+            <textarea id="entryInstructions" maxlength="2000" placeholder="Explica qué ampliar, corregir o qué contexto y ejemplo incluir"></textarea>
+          </label>
+          <div class="entry-models">
+            <label>Proveedor<select id="entryProvider" required></select></label>
+            <label>Modelo<select id="entryModel" required></select></label>
+          </div>
+          <p class="hint">La tarjeta actual se carga desde el servidor. La IA puede cambiar <code>head</code> e <code>id</code>. Usa <code>&lt;&lt;...&gt;&gt;</code> para señalar una unidad semántica completa.</p>
+          <button class="btn primary" id="entryGenerate" type="submit">Generar vista previa</button>
+        </form>
+        <div id="entryPreview" class="entry-preview" aria-live="polite"></div>
+        <div class="actions" id="entryPreviewActions" hidden>
+          <button class="btn primary" id="entrySave" type="button">Guardar cambios</button>
+          <button class="btn" id="entryRetry" type="button">Generar otra versión</button>
+        </div>
       </section>
     </section>
 

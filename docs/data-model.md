@@ -163,6 +163,12 @@ La curación de modelos también se escribe en una transacción. Sus filas no se
 eliminan cuando un modelo desaparece del snapshot, para poder reaplicarlas si
 vuelve a publicarse.
 
+La edición dirigida recibe el id original por separado. En una sola transacción
+actualiza la fila objetivo y puede cambiar `id` junto con `head`; conserva
+`added_at`, actualiza `updated_at` y rechaza el nuevo id si pertenece a otra
+fila. No utiliza la importación genérica, por lo que una renombración nunca crea
+accidentalmente la tarjeta nueva dejando también la original.
+
 ## API
 
 Lectura (pública):
@@ -188,10 +194,22 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | POST | `/api/admin/import` | `{ sources: [{ name, text }], mode: "update" \| "keep", dryRun, origin }` → `{ items, summary, importId? }` |
 | POST | `/api/admin/import-folder` | `{ mode, dryRun }` → igual que `import` |
 | GET | `/api/admin/imports` | Últimas 15 filas de `imports` |
-| POST | `/api/admin/ai/generate` | `{ term, hint, mode, provider?, model?, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. `provider` y `model` deben formar un par visible del snapshot vigente; un modelo oculto se rechaza aunque se envíe manualmente. Si se omiten se usa el predeterminado global resuelto. Para `opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50. |
+| GET | `/api/admin/entries/:id` | Devuelve la tarjeta vigente cargada por el servidor. |
+| PUT | `/api/admin/entries/:id` | `{ entry, source? }` → `{ ok, entry, previousId, warnings }`. Reemplazo dirigido que permite renombrar y devuelve `404` si falta el objetivo o `409` ante colisión. |
+| DELETE | `/api/admin/entries/:id` | `{ ok, total }` |
+| POST | `/api/admin/ai/generate` | `{ term, hint, instructions?, provider, model, opencodeSessionRequestLimit? }` → `{ provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. |
+| POST | `/api/admin/ai/edit` | `{ entryId, instructions?, provider, model, opencodeSessionRequestLimit? }` → la misma vista previa, con exactamente una entrada válida. La tarjeta actual se obtiene por `entryId` en el servidor. |
 
 `summary`: `{ new, update, same, skip, duplicate, error }`. Cada elemento de
 `items`: `{ status, source, index, id, head, kind, level, message }`.
+
+`instructions` admite hasta 2000 caracteres. `provider` y `model` son
+obligatorios en cada generación y deben formar un par visible del catálogo
+vigente; un modelo oculto se rechaza aunque se envíe manualmente. Para
+`opencode-go`, el límite debe ser un entero entre 1 y 1000; si se omite, usa 50.
+La notación `<<...>>` conserva todo el contenido delimitado como una unidad
+semántica en el mensaje enviado a la IA; los delimitadores no deben aparecer en
+la tarjeta salvo petición expresa.
 
 Las claves específicas habilitan automáticamente OpenCode Go, OpenAI, Anthropic
 y Gemini; una entrada obsoleta en `ai.providers` no los habilita sin credencial.
@@ -225,6 +243,7 @@ la IA pública queda deshabilitada. Si el predeterminado persistido desaparece o
 se oculta, la lectura usa el primer modelo visible en orden de snapshot sin
 modificar la fila persistida. La vista administrativa conserva el catálogo
 completo y señala ese fallback; la vista pública, el selector principal y el
-diálogo solo reciben la proyección visible. El diálogo inicia con `ai.default` y
-mantiene cualquier cambio únicamente durante esa apertura. El valor antiguo de
+diálogo solo reciben la proyección visible. Cada flujo inicia con `ai.default`,
+pero envía siempre la selección explícita y mantiene cualquier cambio durante
+todos sus reintentos. El valor antiguo de
 `localStorage` se elimina y nunca participa en la resolución.

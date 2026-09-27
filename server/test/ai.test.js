@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { createAiModelCatalog } from '../ai-models.js';
 import { resolveAi, publicAiInfo, generateEntries, createOpenCodeSessionAllocator, OPENCODE_USER_AGENT } from '../ai.js';
 import { tempStore } from './helpers.js';
+import { userMessage } from '../prompt.js';
+import { generatePreview } from '../ai-workflow.js';
 
 const KEY_ENV = ['AI_API_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'OPENCODE_API_KEY'];
 
@@ -402,4 +404,57 @@ test('OpenCode Go rota la sesión antes de la solicitud N+1', () => {
   const ids = ['a', 'b'];
   const allocate = createOpenCodeSessionAllocator(() => ids.shift());
   assert.deepEqual([allocate(2), allocate(2), allocate(2)], ['a', 'a', 'b']);
+});
+
+test('construye el mensaje de creación con instrucciones y conserva <<...>> como una unidad', () => {
+  const message = userMessage([{ term:'<<Would you mind closing the window?>>', hint:'petición cortés' }], {
+    instructions:'Incluye un ejemplo en una oficina.'
+  });
+  assert.match(message, /LISTA:\n<<Would you mind closing the window\?>> \(petición cortés\)/);
+  assert.match(message, /INSTRUCCIONES ADICIONALES:\nIncluye un ejemplo en una oficina\./);
+  assert.equal((message.match(/<<Would you mind closing the window\?>>/g) || []).length, 1);
+
+  const editing = userMessage([{ term:'old head' }], {
+    instructions:'Cambia el ejemplo.', currentEntry:{ id:'old-head', head:'old head', meaning:'Original' }
+  });
+  assert.match(editing, /TARJETA ACTUAL \(fuente autoritativa del servidor\):\n\{"id":"old-head"/);
+  assert.match(editing, /INSTRUCCIONES ADICIONALES:\nCambia el ejemplo\./);
+});
+
+test('la edición usa la tarjeta autoritativa, exige una entrada y conserva proveedor y modelo', async t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  store.apply([{
+    name:'prueba',
+    text:JSON.stringify({ entries:[{ head:'old head', meaning:'Original', kind:'word' }] })
+  }], 'update', 'texto');
+  let received;
+  const generate = async (cfg, terms, options) => {
+    received = { terms, options };
+    return {
+      provider:options.provider, model:options.model, label:'Modelo de prueba',
+      text:JSON.stringify({ entries:[{ head:'new head', meaning:'Editada', kind:'phrase' }] })
+    };
+  };
+  const result = await generatePreview({}, store, {
+    entryId:'old-head', instructions:'Amplía el contexto.', provider:'custom', model:'model-x',
+    currentEntry:{ head:'falsificada', meaning:'No confiar' }
+  }, { edit:true, generate });
+
+  assert.equal(received.options.currentEntry.meaning, 'Original');
+  assert.equal(received.options.instructions, 'Amplía el contexto.');
+  assert.deepEqual(received.terms, [{ term:'old head', hint:'' }]);
+  assert.equal(result.provider, 'custom');
+  assert.equal(result.model, 'model-x');
+  assert.equal(result.items.length, 1);
+
+  for (const entries of [[], [{ head:'one', meaning:'Uno' }, { head:'two', meaning:'Dos' }]]) {
+    await assert.rejects(generatePreview({}, store, {
+      entryId:'old-head', provider:'custom', model:'model-x'
+    }, { edit:true, generate:async () => ({ provider:'custom', model:'model-x', label:'X', text:JSON.stringify({ entries }) }) }), /exactamente una tarjeta válida/);
+  }
+});
+
+test('la edición rechaza una selección implícita de proveedor o modelo', async t => {
+  const { store, cleanup } = tempStore(); t.after(cleanup);
+  await assert.rejects(generatePreview({}, store, { term:'word', provider:'openai' }), /Selecciona explícitamente/);
 });

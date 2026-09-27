@@ -157,7 +157,9 @@ a.btn{text-decoration:none;color:inherit}
 a.btn.primary{color:var(--card)}
 .back-actions{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .back-actions .flip{margin-top:0}
-.del{border:0;background:transparent;color:var(--muted);font-size:12px;padding:6px 0 0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.admin-card-actions{display:flex;align-items:center;gap:10px}
+.edit,.del{border:0;background:transparent;color:var(--muted);font-size:12px;padding:6px 0 0;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.edit:hover{color:var(--focus)}
 .del:hover{color:#C23B3B}
 
 /* Barra "agregar" cuando la búsqueda no tiene tarjeta exacta */
@@ -178,7 +180,10 @@ a.btn.primary{color:var(--card)}
 .ai-form{display:grid;grid-template-columns:1fr;gap:10px;padding:6px 16px 12px}
 .ai-form label{display:grid;gap:4px;font-size:13px;color:var(--muted);font-weight:700}
 .ai-form .opt{font-weight:400}
-.ai-form input{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--ink);font-weight:400;font-size:15px}
+.ai-form input,.ai-form textarea{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;color:var(--ink);font-weight:400;font-size:15px}
+.ai-form textarea{min-height:76px;resize:vertical;font-family:inherit}
+.field-help{font-size:12px;font-weight:400;line-height:1.35;color:var(--muted)}
+.field-help code{font-size:11px;background:var(--soft);border-radius:4px;padding:1px 4px}
 .ai-form button{justify-self:start}
 .ai-body{padding:0 16px 8px}
 .ai-body:empty{display:none}

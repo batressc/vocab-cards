@@ -1,7 +1,7 @@
 /* "Crear tarjeta con IA" desde la búsqueda: barra de sugerencia, diálogo,
    generación, vista previa y guardado. */
 import { $, esc, store, toast, findAiModel, resolveAiDefaultModel, OPENCODE_SESSION_LIMIT_KEY, AI_CATEGORY_LABELS } from '../../shared/utils.js';
-import { meta, api, authed, cardHTML, flip, speak, applyMeta, resetFeed, onFirstPage } from './app.js';
+import { meta, api, authed, cardHTML, flip, speak, applyMeta, resetFeed, onFirstPage, isAdminUnlocked } from './app.js';
 
 const ICON_SPARK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.4 2.4M15.3 15.3l2.4 2.4M6.3 17.7l2.4-2.4M15.3 8.7l2.4-2.4"/></svg>';
 
@@ -20,9 +20,9 @@ function renderAddBar(page){
     : `No hay ninguna tarjeta para “<b>${esc(q)}</b>”.`;
   bar.innerHTML = `
     <span class="msg">${msg}</span>
-    ${info.enabled ? `<button type="button" class="btn primary" data-ai-open>${ICON_SPARK}Crear con IA</button>` : ''}
+    ${info.enabled && isAdminUnlocked() ? `<button type="button" class="btn primary" data-ai-open>${ICON_SPARK}Crear con IA</button>` : ''}
     <a class="btn" href="import.html#data">Cargar datos</a>
-    ${info.enabled ? '' : `<p class="why">Para crearla con IA, configura un proveedor en config.json. ${esc(info.reason || '')}</p>`}`;
+    ${info.enabled ? (isAdminUnlocked() ? '' : '<p class="why">Desbloquea la administración para crearla con IA.</p>') : `<p class="why">Para crearla con IA, configura un proveedor en config.json. ${esc(info.reason || '')}</p>`}`;
   bar.hidden = false;
 }
 
@@ -43,6 +43,7 @@ function openAi(term){
   ai.result = null;
   $('#aiTerm').value = term;
   $('#aiHint').value = '';
+  $('#aiInstructions').value = '';
   $('#aiBody').innerHTML = '';
   $('#aiActions').hidden = true;
   $('#aiModelPicker').hidden = true;
@@ -137,7 +138,7 @@ function renderModelPicker(){
 
 function setBusy(v){
   ai.busy = v;
-  for (const control of dlg.querySelectorAll('button, input')) control.disabled = v;
+  for (const control of dlg.querySelectorAll('button, input, textarea')) control.disabled = v;
   if (!v) $('#aiGenerate').disabled = !selectedModel();
 }
 
@@ -156,6 +157,7 @@ async function generate(){
       body: JSON.stringify({
         term,
         hint: $('#aiHint').value.trim(),
+        instructions: $('#aiInstructions').value.trim(),
         mode:'update',
         provider: ai.selection.provider,
         model: ai.selection.model,

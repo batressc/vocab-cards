@@ -48,6 +48,7 @@ let sortState = { by:'added', dir:'desc', seed:0, ...store.get('vocab-sort', {})
 if (!SORTS[sortState.by]) sortState = { by:'added', dir:'desc', seed:0 };
 export let meta = null;
 let pageSize = 12;
+let adminUnlocked = false;
 
 const feed = { gen:0, skip:0, total:0, shown:0, loading:false, done:false, error:false, ctrl:null, exclude:null };
 const grid = $('#grid');
@@ -114,7 +115,7 @@ export function cardHTML(d){
         ${d.addedAt ? `<p class="added">Agregada el ${esc(fmtDate(d.addedAt))}${d.source ? `, en ${esc(d.source)}` : ''}</p>` : ''}
         <div class="back-actions">
           <button type="button" class="flip" data-flip>${ICON_FLIP}Volver</button>
-          <button type="button" class="del" data-del aria-label="Eliminar ${esc(d.head)}">Eliminar</button>
+          ${adminUnlocked ? `<span class="admin-card-actions"><a class="edit" href="import.html#entries/${encodeURIComponent(d.id)}">Editar</a><button type="button" class="del" data-del aria-label="Eliminar ${esc(d.head)}">Eliminar</button></span>` : ''}
         </div>
       </section>
     </div>
@@ -362,23 +363,53 @@ export function applyMeta(m){
 
 /* ================= Operaciones con clave de administración ================= */
 export async function authed(path, options = {}, base = API){
-  let token = store.get(ADMIN_TOKEN_KEY, '');
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (!token) {
-      token = (prompt('Clave de administración para modificar tarjetas:') || '').trim();
-      if (!token) throw new Error('Se necesita la clave de administración.');
-    }
-    const headers = { Accept:'application/json', Authorization:`Bearer ${token}` };
-    if (options.body) headers['Content-Type'] = 'application/json';
-    const res = await fetch(`${base}/${path}`, { ...options, headers });
-    if (res.status === 401) { store.set(ADMIN_TOKEN_KEY, ''); token = ''; continue; }
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `El servidor respondió con el código ${res.status}.`);
-    store.set(ADMIN_TOKEN_KEY, token);
-    return body;
+  const token = adminUnlocked && store.get(ADMIN_TOKEN_KEY, '');
+  if (!token) throw new Error('Desbloquea primero las funciones de administración.');
+  const headers = { Accept:'application/json', Authorization:`Bearer ${token}` };
+  if (options.body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(`${base}/${path}`, { ...options, headers });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    lockAdmin();
+    throw new Error('La clave no es correcta o cambió. La administración volvió a bloquearse.');
   }
-  throw new Error('La clave de administración no es correcta.');
+  if (!res.ok) throw new Error(body.error || `El servidor respondió con el código ${res.status}.`);
+  return body;
 }
+
+export const isAdminUnlocked = () => adminUnlocked;
+
+function lockAdmin(){
+  adminUnlocked = false;
+  store.set(ADMIN_TOKEN_KEY, '');
+  $('#adminUnlock').setAttribute('aria-pressed', 'false');
+  $('#adminUnlock').textContent = 'Desbloquear administración';
+  resetFeed();
+}
+
+async function unlockAdmin(){
+  let token = store.get(ADMIN_TOKEN_KEY, '');
+  if (!token) token = (prompt('Clave de administración:') || '').trim();
+  if (!token) return;
+  try {
+    const res = await fetch('api/admin/check', { headers:{ Accept:'application/json', Authorization:`Bearer ${token}` } });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      store.set(ADMIN_TOKEN_KEY, '');
+      toast(body.error || 'No se pudo validar la clave de administración.');
+      return;
+    }
+    store.set(ADMIN_TOKEN_KEY, token);
+    adminUnlocked = true;
+    $('#adminUnlock').setAttribute('aria-pressed', 'true');
+    $('#adminUnlock').textContent = 'Administración desbloqueada';
+    resetFeed();
+  } catch {
+    toast('No se pudo conectar con el servidor para validar la clave.');
+  }
+}
+
+$('#adminUnlock').addEventListener('click', () => adminUnlocked ? lockAdmin() : unlockAdmin());
 
 async function deleteCard(card){
   const id = card.dataset.id, head = card.querySelector('.head')?.textContent || id;

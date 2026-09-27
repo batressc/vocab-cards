@@ -9,6 +9,7 @@ Otras funciones:
 - **Encontrar tarjetas:** filtros por nivel y tipo, seis criterios de orden, búsqueda sin tildes y scroll infinito.
 - **Estudiar:** modo práctica y marcado de "ya la sé".
 - **Agregar tarjetas:** pegar el JSON que genera una IA, subir archivos o crearlas con IA directamente desde la búsqueda.
+- **Administrar tarjetas:** buscar, paginar, regenerar con instrucciones y proveedor/modelo explícitos, previsualizar, renombrar o eliminar.
 
 ## Tecnologías
 
@@ -151,10 +152,23 @@ otra decisión. Si un modelo desaparece del catálogo, sus preferencias se
 conservan para cuando regrese. Si desaparece o se oculta el predeterminado, el
 servidor usa de forma determinista el primer modelo visible sin sobrescribir el
 valor guardado. Es válido ocultarlos todos: no habrá predeterminado y la creación
-con IA quedará deshabilitada. Al abrir **Crear con IA**, el selector parte del
-predeterminado global; cualquier alternativa elegida allí solo dura mientras el
-cuadro permanece abierto. La antigua clave local
+con IA quedará deshabilitada. Al abrir **Crear con IA** o una edición, el selector
+parte del predeterminado global; cualquier alternativa elegida se conserva
+durante todos los reintentos del flujo actual. Las instrucciones adicionales
+permiten pedir otro contexto, ampliar una explicación o exigir un ejemplo. El
+texto entre `<<` y `>>` se trata como una unidad semántica completa y esos
+delimitadores no se copian a la tarjeta. La antigua clave local
 `vocab-ai-default-model` se elimina y ya no es una fuente de configuración.
+
+La página principal incluye **Desbloquear administración**. Solo después de
+validar la clave con `/api/admin/check` aparecen las acciones de edición y
+creación; un `401` borra la clave local y vuelve a bloquearlas. La seguridad no
+depende de esa interfaz: editar, guardar y eliminar siguen requiriendo
+`Authorization: Bearer <ADMIN_TOKEN>` en el servidor. En **Administración →
+Tarjetas** se puede buscar y paginar el catálogo, seleccionar una tarjeta,
+regenerarla con IA, revisar la vista previa y guardarla o eliminarla con
+confirmación. Si la edición cambia el id, el guardado reemplaza la fila original
+atómicamente y migra el id en la lista local de tarjetas aprendidas.
 
 ### Sesiones de OpenCode Go
 

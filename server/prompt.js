@@ -19,7 +19,10 @@ export async function loadSystemPrompt(cfg) {
   }
 }
 
-/** Mensaje de usuario: la lista de términos, con su aclaración de sentido si la hay. */
-export function userMessage(terms) {
-  return 'LISTA:\n' + terms.map(t => t.hint ? `${t.term} (${t.hint})` : t.term).join('\n');
+/** Mensaje de usuario estructurado para creación o edición. */
+export function userMessage(terms, { instructions = '', currentEntry = null } = {}) {
+  const sections = ['LISTA:', ...terms.map(t => t.hint ? `${t.term} (${t.hint})` : t.term)];
+  if (currentEntry) sections.push('', 'TARJETA ACTUAL (fuente autoritativa del servidor):', JSON.stringify(currentEntry));
+  if (instructions) sections.push('', 'INSTRUCCIONES ADICIONALES:', instructions);
+  return sections.join('\n');
 }

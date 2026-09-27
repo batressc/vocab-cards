@@ -5,8 +5,9 @@ import { resolve } from 'node:path';
 import { ROOT, loadConfig } from './config.js';
 import { VocabStore, readFolderSources } from './vocab-store.js';
 import { createAuth } from './auth.js';
-import { generateEntries, publicAiInfo, OPENCODE_SESSION_LIMIT } from './ai.js';
+import { publicAiInfo, OPENCODE_SESSION_LIMIT } from './ai.js';
 import { aiModelCatalog } from './ai-models.js';
+import { generatePreview } from './ai-workflow.js';
 
 // --dev: Vite sirve el frontend con recarga en caliente. Sin --dev: se sirve dist/ (npm run build).
 const DEV = process.argv.includes('--dev');
@@ -96,6 +97,26 @@ admin.post('/import-folder', json('4kb'), async (req, res) => {
 
 admin.get('/imports', (req, res) => res.json(store.history(15)));
 
+admin.get('/entries/:id', (req, res) => {
+  const entry = store.get(req.params.id);
+  if (!entry) return res.status(404).json({ error: 'La tarjeta no existe.' });
+  res.json(entry);
+});
+
+admin.put('/entries/:id', json('16kb'), (req, res) => {
+  try {
+    res.json({ ok: true, ...store.replace(req.params.id, req.body?.entry, req.body?.source) });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    throw err;
+  }
+});
+
+admin.delete('/entries/:id', (req, res) => {
+  if (!store.remove(req.params.id)) return res.status(404).json({ error: 'La tarjeta no existe.' });
+  res.json({ ok: true, total: store.size });
+});
+
 admin.post('/ai/models/refresh', async (req, res) => {
   const cfg = await loadConfig();
   res.json(await publicAiInfo(cfg, { force: true, store, admin: true }));
@@ -120,20 +141,18 @@ const aiLimiter = rateLimit({
   message: { error: 'Demasiadas generaciones seguidas; espera un minuto.' }
 });
 admin.post('/ai/generate', aiLimiter, json('8kb'), async (req, res) => {
-  const term = String(req.body?.term ?? '').trim().slice(0, 120);
-  const hint = String(req.body?.hint ?? '').trim().slice(0, 200);
-  if (!term) return res.status(400).json({ error: 'Escribe la palabra o frase que quieres agregar.' });
   try {
     const cfg = await loadConfig();
-    const ai = await generateEntries(cfg, [{ term, hint }], {
-      provider: req.body?.provider,
-      model: req.body?.model,
-      opencodeSessionRequestLimit: req.body?.opencodeSessionRequestLimit,
-      store
-    });
-    const source = `IA · ${ai.label}`;
-    const result = store.plan([{ name: source, text: ai.text }], asMode(req.body?.mode), { withEntries: true });
-    res.json({ provider: ai.provider, label: ai.label, model: ai.model, source, text: ai.text, ...result });
+    res.json(await generatePreview(cfg, store, req.body));
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
+});
+
+admin.post('/ai/edit', aiLimiter, json('16kb'), async (req, res) => {
+  try {
+    res.json(await generatePreview(await loadConfig(), store, req.body, { edit: true }));
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;
