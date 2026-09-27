@@ -170,7 +170,11 @@ La migración `v3` agrega cinco áreas persistentes:
 Las tablas de métricas no tienen claves foráneas hacia `entries`: el historial
 sobrevive a eliminar una tarjeta individual o a limpiar todas las tarjetas. Los
 índices cubren fecha, tipo de evento, tarjeta y proveedor/modelo. Una vista de
-tarjeta se deduplica por sesión y tarjeta mediante un índice único parcial.
+tarjeta (`card_view`) solo se registra cuando la tarjeta permanece visible al
+50% o más del viewport de forma continua durante al menos 5 segundos; salir del
+viewport, ocultar la pestaña o desmontar la tarjeta antes de ese tiempo cancela
+el conteo y no registra nada. Además se deduplica por sesión y tarjeta mediante
+un índice único parcial.
 
 `data_epoch` aumenta cuando limpiar tarjetas o reiniciar todo elimina tarjetas o
 activa por primera vez la inhibición del seed. El cliente lo compara
@@ -222,7 +226,7 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 | DELETE | `/api/admin/entries/:id` | `{ ok, total }` |
 | POST | `/api/admin/ai/generate` | `{ term, hint, instructions?, provider, model, opencodeSessionRequestLimit? }` → `{ generationId, provider, label, model, source, text, items (con entry), summary }`. No guarda; máximo 10 por minuto. |
 | POST | `/api/admin/ai/edit` | `{ entryId, instructions?, provider, model, opencodeSessionRequestLimit? }` → la misma vista previa, con exactamente una entrada válida. La tarjeta actual se obtiene por `entryId` en el servidor. |
-| GET | `/api/admin/statistics?range=7d\|30d\|90d\|all` | KPIs, serie diaria y agregaciones por proveedor/modelo, tarjeta, búsqueda y término generado. |
+| GET | `/api/admin/statistics?range=7d\|30d\|90d\|all` | KPIs, serie diaria de generaciones (`daily`) y de actividad de uso (`usageDaily`: vistas, giros, audios y búsquedas por día), y agregaciones por proveedor/modelo, tarjeta, búsqueda y término generado. |
 | GET | `/api/admin/maintenance/summary` | Conteos previos de tarjetas, auditoría, métricas, preferencias, epoch y estado de seed. |
 | POST | `/api/admin/maintenance/clear` | `{ scope, confirmation }`; `scope`: `cards`, `audit`, `metrics` o `all`. |
 
@@ -231,7 +235,9 @@ Escritura (cabecera `Authorization: Bearer <ADMIN_TOKEN>`, máximo 30 por minuto
 El navegador crea un UUID persistente de cliente y otro por sesión. El endpoint
 acepta lotes de hasta 50 eventos y rechaza campos desconocidos. Tipos válidos:
 `search`, `card_view`, `card_flip`, `audio_play`, `known_changed` y
-`practice_changed`. Solo se conservan el término normalizado de búsqueda, el id
+`practice_changed`. `card_view` exige 5 segundos continuos de visibilidad (≥50%
+del viewport) antes de enviarse; el simple scroll no genera vistas. Solo se
+conservan el término normalizado de búsqueda, el id
 de tarjeta, conteos y estados booleanos necesarios. No se guardan IP,
 user-agent, tokens, hints, instrucciones/prompts ni respuestas de IA.
 

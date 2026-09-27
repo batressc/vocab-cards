@@ -42,6 +42,7 @@
       <button type="button" role="tab" id="admin-tab-entries" aria-controls="admin-pane-entries" aria-selected="false" tabindex="-1">Tarjetas</button>
       <button type="button" role="tab" id="admin-tab-data" aria-controls="admin-pane-data" aria-selected="false" tabindex="-1">Carga de datos</button>
       <button type="button" role="tab" id="admin-tab-statistics" aria-controls="admin-pane-statistics" aria-selected="false" tabindex="-1">Estadísticas</button>
+      <button type="button" role="tab" id="admin-tab-danger" aria-controls="admin-pane-danger" aria-selected="false" tabindex="-1">Zona de peligro</button>
     </div>
 
     <section class="admin-pane" role="tabpanel" id="admin-pane-ai" aria-labelledby="admin-tab-ai">
@@ -206,19 +207,59 @@
       <section class="panel" aria-labelledby="statisticsTitle">
         <div class="statistics-head">
           <div><h2 id="statisticsTitle">Actividad y generaciones</h2><p class="section-intro">Métricas anónimas y orientativas registradas por el servidor.</p></div>
-          <label for="statisticsRange">Periodo<select id="statisticsRange"><option value="7d">7 días</option><option value="30d" selected>30 días</option><option value="90d">90 días</option><option value="all">Todo</option></select></label>
+          <div class="statistics-controls">
+            <label for="statisticsRange">Periodo<select id="statisticsRange"><option value="7d">7 días</option><option value="30d" selected>30 días</option><option value="90d">90 días</option><option value="all">Todo</option></select></label>
+            <label for="statisticsPageSize">Registros por tabla<select id="statisticsPageSize"><option value="10">10</option><option value="15">15</option><option value="20">20</option></select></label>
+          </div>
         </div>
         <p id="statisticsStatus" class="catalog-status" aria-live="polite"></p>
         <div class="kpi-grid" id="statisticsKpis"></div>
-        <div class="chart" id="generationChart" role="img" aria-label="Generaciones de IA por día"></div>
+        <div class="charts">
+          <section class="chart-panel" aria-labelledby="generationChartTitle">
+            <h3 id="generationChartTitle">Generaciones de IA por día</h3>
+            <div class="vbars" id="generationChart" role="img" aria-label="Generaciones de IA por día"></div>
+            <p class="chart-legend" id="generationChartLegend"></p>
+          </section>
+          <section class="chart-panel" aria-labelledby="usageChartTitle">
+            <h3 id="usageChartTitle">Actividad de estudio por día</h3>
+            <div class="vbars" id="usageChart" role="img" aria-label="Vistas, interacciones y búsquedas por día"></div>
+            <p class="chart-legend" id="usageChartLegend"></p>
+          </section>
+          <section class="chart-panel" aria-labelledby="outcomeChartTitle">
+            <h3 id="outcomeChartTitle">Resultado de las generaciones de IA</h3>
+            <div id="outcomeChart" role="img" aria-label="Distribución de resultados de las generaciones de IA"></div>
+            <p class="chart-legend" id="outcomeChartLegend"></p>
+          </section>
+          <section class="chart-panel" aria-labelledby="providerChartTitle">
+            <h3 id="providerChartTitle">Generaciones por proveedor y modelo</h3>
+            <div class="hbars" id="providerChart" role="img" aria-label="Generaciones por proveedor y modelo"></div>
+            <p class="chart-legend" id="providerChartLegend"></p>
+          </section>
+          <section class="chart-panel" aria-labelledby="consumedChartTitle">
+            <h3 id="consumedChartTitle">Tarjetas más vistas e interactuadas</h3>
+            <div class="hbars" id="consumedChart" role="img" aria-label="Tarjetas más vistas e interactuadas"></div>
+            <p class="chart-legend" id="consumedChartLegend"></p>
+          </section>
+          <section class="chart-panel" aria-labelledby="searchChartTitle">
+            <h3 id="searchChartTitle">Búsquedas frecuentes y búsquedas sin resultados</h3>
+            <div class="hbars" id="searchChart" role="img" aria-label="Búsquedas frecuentes y búsquedas sin resultados"></div>
+            <p class="chart-legend" id="searchChartLegend"></p>
+          </section>
+        </div>
         <div class="statistics-tables">
-          <section><h3>Proveedor y modelo</h3><div class="table-wrap"><table class="results"><thead><tr><th>Proveedor / modelo</th><th>Generaciones</th><th>Éxitos</th><th>Guardadas</th><th>Duración media</th></tr></thead><tbody id="providerStats"></tbody></table></div></section>
-          <section><h3>Tarjetas consumidas</h3><div class="table-wrap"><table class="results"><thead><tr><th>Tarjeta</th><th>Vistas</th><th>Interacciones</th><th>Navegadores</th></tr></thead><tbody id="consumedStats"></tbody></table></div></section>
-          <section><h3>Búsquedas frecuentes</h3><div class="table-wrap"><table class="results"><thead><tr><th>Término</th><th>Búsquedas</th><th>Sin resultados</th></tr></thead><tbody id="searchStats"></tbody></table></div></section>
-          <section><h3>Términos generados</h3><div class="table-wrap"><table class="results"><thead><tr><th>Término</th><th>Operación</th><th>Generaciones</th><th>Guardadas</th></tr></thead><tbody id="generatedStats"></tbody></table></div></section>
+          <section><h3>Proveedor y modelo</h3><div class="table-wrap"><table class="results"><thead><tr><th>Proveedor / modelo</th><th>Generaciones</th><th>Éxitos</th><th>Guardadas</th><th>Duración media</th></tr></thead><tbody id="providerStats"></tbody></table></div>
+            <nav class="grid-pagination" id="providerPager" data-grid="providers" aria-label="Paginación de proveedor y modelo"><button class="btn" type="button" data-page="prev" aria-label="Página anterior de proveedor y modelo">Anterior</button><span data-page-status aria-live="polite"></span><button class="btn" type="button" data-page="next" aria-label="Página siguiente de proveedor y modelo">Siguiente</button></nav></section>
+          <section><h3>Tarjetas consumidas</h3><div class="table-wrap"><table class="results"><thead><tr><th>Tarjeta</th><th>Vistas</th><th>Interacciones</th><th>Navegadores</th></tr></thead><tbody id="consumedStats"></tbody></table></div>
+            <nav class="grid-pagination" id="consumedPager" data-grid="consumed" aria-label="Paginación de tarjetas consumidas"><button class="btn" type="button" data-page="prev" aria-label="Página anterior de tarjetas consumidas">Anterior</button><span data-page-status aria-live="polite"></span><button class="btn" type="button" data-page="next" aria-label="Página siguiente de tarjetas consumidas">Siguiente</button></nav></section>
+          <section><h3>Búsquedas frecuentes</h3><div class="table-wrap"><table class="results"><thead><tr><th>Término</th><th>Búsquedas</th><th>Sin resultados</th></tr></thead><tbody id="searchStats"></tbody></table></div>
+            <nav class="grid-pagination" id="searchPager" data-grid="searches" aria-label="Paginación de búsquedas frecuentes"><button class="btn" type="button" data-page="prev" aria-label="Página anterior de búsquedas frecuentes">Anterior</button><span data-page-status aria-live="polite"></span><button class="btn" type="button" data-page="next" aria-label="Página siguiente de búsquedas frecuentes">Siguiente</button></nav></section>
+          <section><h3>Términos generados</h3><div class="table-wrap"><table class="results"><thead><tr><th>Término</th><th>Operación</th><th>Generaciones</th><th>Guardadas</th></tr></thead><tbody id="generatedStats"></tbody></table></div>
+            <nav class="grid-pagination" id="generatedPager" data-grid="generated" aria-label="Paginación de términos generados"><button class="btn" type="button" data-page="prev" aria-label="Página anterior de términos generados">Anterior</button><span data-page-status aria-live="polite"></span><button class="btn" type="button" data-page="next" aria-label="Página siguiente de términos generados">Siguiente</button></nav></section>
         </div>
       </section>
+    </section>
 
+    <section class="admin-pane" role="tabpanel" id="admin-pane-danger" aria-labelledby="admin-tab-danger" hidden>
       <section class="panel danger-zone" aria-labelledby="dangerTitle">
         <h2 id="dangerTitle">Zona de peligro</h2>
         <p class="section-intro">Cada operación es independiente, transaccional y requiere escribir una frase exacta.</p>

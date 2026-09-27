@@ -27,7 +27,7 @@ const hashEntryId = () => location.hash.startsWith('#entries/') ? decodeURICompo
 const state = {
   token: store.get(ADMIN_TOKEN_KEY, ''),
   info: null,               // respuesta de /api/admin/check
-  adminTab: location.hash === '#data' ? 'data' : location.hash === '#statistics' ? 'statistics' : hashEntryId() ? 'entries' : 'ai',
+  adminTab: location.hash === '#data' ? 'data' : location.hash === '#statistics' ? 'statistics' : location.hash === '#danger' ? 'danger' : hashEntryId() ? 'entries' : 'ai',
   tab: 'text',
   files: [],                // [{ file, text?, error? }]
   review: null,             // último resultado de revisión
@@ -397,7 +397,7 @@ $('#authForm').addEventListener('submit', e => {
 $('#logout').addEventListener('click', () => logout());
 
 /* ================= Pestañas ================= */
-const ADMIN_TABS = ['ai', 'entries', 'data', 'statistics'];
+const ADMIN_TABS = ['ai', 'entries', 'data', 'statistics', 'danger'];
 function selectAdminTab(name, focus = false){
   state.adminTab = ADMIN_TABS.includes(name) ? name : 'ai';
   for (const tabName of ADMIN_TABS) {
@@ -410,10 +410,12 @@ function selectAdminTab(name, focus = false){
   const hash = state.adminTab === 'data' ? '#data'
     : state.adminTab === 'entries' ? (state.entries.selectedId ? `#entries/${encodeURIComponent(state.entries.selectedId)}` : '#entries')
     : state.adminTab === 'statistics' ? '#statistics'
+    : state.adminTab === 'danger' ? '#danger'
     : '#ai';
   history.replaceState(null, '', hash);
   if (state.adminTab === 'entries' && state.info && !state.entries.loading) loadEntries();
   if (state.adminTab === 'statistics' && state.info) loadStatistics();
+  if (state.adminTab === 'danger' && state.info) loadMaintenance();
 }
 
 document.querySelector('.admin-tabs').addEventListener('click', e => {
@@ -837,18 +839,140 @@ async function loadHistory(){
 const n = value => Number(value || 0).toLocaleString('es');
 const emptyRow = columns => `<tr><td colspan="${columns}" class="muted">Sin datos en este periodo.</td></tr>`;
 
+/* ---- Paginación de las tablas ---- */
+// Un único selector define el tamaño de página de todas las tablas a la vez y se
+// conserva en este navegador; cada tabla solo recuerda su página actual.
+const STATS_PAGE_SIZE_KEY = 'vocab-stats-page-size';
+const savedPageSize = Number(store.get(STATS_PAGE_SIZE_KEY, 15));
+let statsPageSize = [10, 15, 20].includes(savedPageSize) ? savedPageSize : 15;
+
+const STATS_GRIDS = {
+  providers: { columns:5, tbody:'#providerStats', pager:'#providerPager',
+    row: row => `<tr><td><b>${esc(row.provider)}</b><br><span class="muted">${esc(row.model)}</span></td><td class="num">${n(row.generations)}</td><td class="num">${n(row.successful)}</td><td class="num">${n(row.saved)}</td><td class="num">${row.average_duration_ms === null ? '—' : `${n(row.average_duration_ms)} ms`}</td></tr>` },
+  consumed: { columns:4, tbody:'#consumedStats', pager:'#consumedPager',
+    row: row => `<tr><td>${esc(row.entry_id)}</td><td class="num">${n(row.views)}</td><td class="num">${n(row.interactions)}</td><td class="num">${n(row.clients)}</td></tr>` },
+  searches: { columns:3, tbody:'#searchStats', pager:'#searchPager',
+    row: row => `<tr><td>${esc(row.term)}</td><td class="num">${n(row.searches)}</td><td class="num">${n(row.no_results)}</td></tr>` },
+  generated: { columns:4, tbody:'#generatedStats', pager:'#generatedPager',
+    row: row => `<tr><td>${esc(row.term)}</td><td>${row.operation === 'edit' ? 'Edición' : 'Creación'}</td><td class="num">${n(row.generations)}</td><td class="num">${n(row.saved)}</td></tr>` }
+};
+const gridRows = Object.fromEntries(Object.keys(STATS_GRIDS).map(key => [key, []]));
+const gridPages = Object.fromEntries(Object.keys(STATS_GRIDS).map(key => [key, 0]));
+
+function renderStatsGrid(key){
+  const cfg = STATS_GRIDS[key], rows = gridRows[key];
+  const pages = Math.max(1, Math.ceil(rows.length / statsPageSize));
+  gridPages[key] = Math.min(gridPages[key], pages - 1);
+  const start = gridPages[key] * statsPageSize;
+  const slice = rows.slice(start, start + statsPageSize);
+  $(cfg.tbody).innerHTML = slice.length ? slice.map(cfg.row).join('') : emptyRow(cfg.columns);
+  const pager = $(cfg.pager);
+  pager.hidden = rows.length <= statsPageSize;
+  pager.querySelector('[data-page-status]').textContent = rows.length
+    ? `${n(start + 1)}–${n(start + slice.length)} de ${n(rows.length)}`
+    : 'Sin datos';
+  pager.querySelector('[data-page=prev]').disabled = gridPages[key] === 0;
+  pager.querySelector('[data-page=next]').disabled = gridPages[key] >= pages - 1;
+}
+
+document.querySelector('.statistics-tables').addEventListener('click', e => {
+  const button = e.target.closest('[data-page]');
+  if (!button) return;
+  const key = button.closest('.grid-pagination').dataset.grid;
+  gridPages[key] += button.dataset.page === 'next' ? 1 : -1;
+  renderStatsGrid(key);
+});
+
+$('#statisticsPageSize').value = String(statsPageSize);
+$('#statisticsPageSize').addEventListener('change', e => {
+  statsPageSize = Number(e.target.value);
+  store.set(STATS_PAGE_SIZE_KEY, statsPageSize);
+  for (const key of Object.keys(STATS_GRIDS)) { gridPages[key] = 0; renderStatsGrid(key); }
+});
+
+/* ---- Gráficos (HTML/CSS puro) ---- */
+// Cada gráfico lleva su título visible, leyenda cuando hay más de una serie y un
+// aria-label resumen; el detalle numérico completo sigue disponible en las tablas.
+const legendHTML = items => items.map(([cls, label]) => `<span class="legend-item"><span class="legend-dot ${cls}" aria-hidden="true"></span>${esc(label)}</span>`).join('');
+
+function emptyChart(chartId, legendId, text){
+  $(chartId).innerHTML = `<p class="muted">${esc(text)}</p>`;
+  $(chartId).setAttribute('aria-label', text);
+  $(legendId).innerHTML = '';
+}
+
+// Barras verticales apiladas: una columna por día, valor total arriba y fecha abajo.
+function renderBarChart(chartId, legendId, rows, series, emptyText){
+  if (!rows.length) { emptyChart(chartId, legendId, emptyText); return; }
+  const totals = rows.map(row => series.reduce((sum, s) => sum + Number(row[s.key] || 0), 0));
+  const max = Math.max(1, ...totals);
+  $(chartId).innerHTML = rows.map((row, i) => {
+    const detail = series.map(s => `${s.label}: ${n(row[s.key])}`).join(', ');
+    return `<div class="vbar" title="${esc(`${row.day}: ${detail}`)}" aria-hidden="true">
+      <span class="vbar-total">${totals[i] ? n(totals[i]) : ''}</span>
+      <div class="vbar-stack">${[...series].reverse().map(s => {
+        const v = Number(row[s.key] || 0);
+        return v ? `<span class="seg ${s.cls}" style="height:${(v * 100 / max).toFixed(1)}%"></span>` : '';
+      }).join('')}</div>
+      <small>${esc(row.day.slice(5))}</small>
+    </div>`;
+  }).join('');
+  const top = totals.indexOf(Math.max(...totals));
+  $(chartId).setAttribute('aria-label', `${n(rows.length)} días con actividad. Total: ${n(totals.reduce((a, b) => a + b, 0))}. Día con más actividad: ${rows[top].day} con ${n(totals[top])}.`);
+  $(legendId).innerHTML = legendHTML(series.map(s => [s.cls, s.label]));
+}
+
+// Barra horizontal segmentada al 100% con porcentajes visibles.
+function renderOutcomeChart(generation){
+  const total = Number(generation.generations || 0);
+  if (!total) { emptyChart('#outcomeChart', '#outcomeChartLegend', 'Todavía no hay generaciones en este periodo.'); return; }
+  const parts = [
+    { cls:'seg-ok', label:'Éxitos', value:Number(generation.successful || 0) },
+    { cls:'seg-warn', label:'Respuestas inválidas', value:Number(generation.invalid || 0) },
+    { cls:'seg-bad', label:'Errores de proveedor', value:Number(generation.provider_errors || 0) }
+  ].filter(part => part.value > 0);
+  const summary = parts.map(part => `${part.label}: ${n(part.value)} (${Math.round(part.value * 100 / total)}%)`).join('. ');
+  $('#outcomeChart').innerHTML = `<div class="hbar-100" aria-hidden="true">${parts.map(part => {
+    const pct = part.value * 100 / total;
+    return `<span class="seg ${part.cls}" style="width:${pct.toFixed(1)}%" title="${esc(`${part.label}: ${n(part.value)} (${Math.round(pct)}%)`)}">${pct >= 9 ? `${Math.round(pct)}%` : ''}</span>`;
+  }).join('')}</div>`;
+  $('#outcomeChart').setAttribute('aria-label', `${summary}.`);
+  $('#outcomeChartLegend').innerHTML = legendHTML(parts.map(part => [part.cls, `${part.label}: ${n(part.value)}`]));
+}
+
+// Barras horizontales apiladas con etiqueta, valor total y tooltip por fila.
+function renderHBars(chartId, legendId, rows, series, labelOf, emptyText, ariaBase){
+  if (!rows.length) { emptyChart(chartId, legendId, emptyText); return; }
+  const totals = rows.map(row => series.reduce((sum, s) => sum + Number(row[s.key] || 0), 0));
+  const max = Math.max(1, ...totals);
+  $(chartId).innerHTML = rows.map((row, i) => {
+    const detail = series.map(s => `${s.label}: ${n(row[s.key])}`).join(', ');
+    return `<div class="hbar-row" title="${esc(`${labelOf(row)}: ${detail}`)}" aria-hidden="true">
+      <span class="hbar-label">${esc(labelOf(row))}</span>
+      <span class="hbar-track">${series.map(s => {
+        const v = Number(row[s.key] || 0);
+        return v ? `<span class="seg ${s.cls}" style="width:${(v * 100 / max).toFixed(1)}%"></span>` : '';
+      }).join('')}</span>
+      <span class="hbar-value">${n(totals[i])}</span>
+    </div>`;
+  }).join('');
+  $(chartId).setAttribute('aria-label', `${ariaBase}: ${rows.map((row, i) => `${labelOf(row)} ${n(totals[i])}`).join(', ')}.`);
+  $(legendId).innerHTML = legendHTML(series.map(s => [s.cls, s.label]));
+}
+
 async function loadStatistics(){
   const status = $('#statisticsStatus');
   status.textContent = 'Cargando estadísticas…';
   try {
-    const [stats, maintenance] = await Promise.all([
-      adminApi(`statistics?range=${encodeURIComponent($('#statisticsRange').value)}`),
-      adminApi('maintenance/summary')
-    ]);
+    const stats = await adminApi(`statistics?range=${encodeURIComponent($('#statisticsRange').value)}`);
     renderStatistics(stats);
-    renderMaintenance(maintenance);
     status.textContent = stats.since ? `Datos desde ${fmtDateTime(stats.since)}.` : 'Todo el historial disponible.';
   } catch (err) { status.textContent = err.message; }
+}
+
+async function loadMaintenance(){
+  try { renderMaintenance(await adminApi('maintenance/summary')); }
+  catch (err) { $('#maintenanceStatus').textContent = err.message; }
 }
 
 function renderStatistics(stats){
@@ -862,16 +986,39 @@ function renderStatistics(stats){
   ];
   $('#statisticsKpis').innerHTML = kpis.map(([label, value]) => `<article><strong>${typeof value === 'string' ? esc(value) : n(value)}</strong><span>${esc(label)}</span></article>`).join('');
 
-  const max = Math.max(1, ...(stats.daily || []).map(row => Number(row.generations)));
-  $('#generationChart').innerHTML = (stats.daily || []).length ? stats.daily.map(row => `
-    <div class="chart-day" title="${esc(row.day)}: ${n(row.generations)} generaciones, ${n(row.saved)} guardadas">
-      <span style="height:${Math.max(4, Number(row.generations) * 100 / max)}%"></span><small>${esc(row.day.slice(5))}</small>
-    </div>`).join('') : '<p class="muted">Todavía no hay generaciones en este periodo.</p>';
+  const daily = (stats.daily || []).map(row => ({ ...row, errors: Number(row.generations || 0) - Number(row.successful || 0) }));
+  renderBarChart('#generationChart', '#generationChartLegend', daily,
+    [{ key:'successful', cls:'seg-ok', label:'Éxitos' }, { key:'errors', cls:'seg-bad', label:'Errores' }],
+    'Todavía no hay generaciones en este periodo.');
 
-  $('#providerStats').innerHTML = stats.providers.length ? stats.providers.map(row => `<tr><td><b>${esc(row.provider)}</b><br><span class="muted">${esc(row.model)}</span></td><td class="num">${n(row.generations)}</td><td class="num">${n(row.successful)}</td><td class="num">${n(row.saved)}</td><td class="num">${row.average_duration_ms === null ? '—' : `${n(row.average_duration_ms)} ms`}</td></tr>`).join('') : emptyRow(5);
-  $('#consumedStats').innerHTML = stats.consumed.length ? stats.consumed.map(row => `<tr><td>${esc(row.entry_id)}</td><td class="num">${n(row.views)}</td><td class="num">${n(row.interactions)}</td><td class="num">${n(row.clients)}</td></tr>`).join('') : emptyRow(4);
-  $('#searchStats').innerHTML = stats.searches.length ? stats.searches.map(row => `<tr><td>${esc(row.term)}</td><td class="num">${n(row.searches)}</td><td class="num">${n(row.no_results)}</td></tr>`).join('') : emptyRow(3);
-  $('#generatedStats').innerHTML = stats.generatedTerms.length ? stats.generatedTerms.map(row => `<tr><td>${esc(row.term)}</td><td>${row.operation === 'edit' ? 'Edición' : 'Creación'}</td><td class="num">${n(row.generations)}</td><td class="num">${n(row.saved)}</td></tr>`).join('') : emptyRow(4);
+  const usageDaily = (stats.usageDaily || []).map(row => ({ ...row, interactions: Number(row.flips || 0) + Number(row.audios || 0) }));
+  renderBarChart('#usageChart', '#usageChartLegend', usageDaily,
+    [{ key:'views', cls:'seg-focus', label:'Vistas' }, { key:'interactions', cls:'seg-ok', label:'Interacciones' }, { key:'searches', cls:'seg-warn', label:'Búsquedas' }],
+    'Todavía no hay actividad de estudio en este periodo.');
+
+  renderOutcomeChart(generation);
+
+  renderHBars('#providerChart', '#providerChartLegend',
+    (stats.providers || []).slice(0, 8).map(row => ({ ...row, errors: Number(row.generations || 0) - Number(row.successful || 0) })),
+    [{ key:'successful', cls:'seg-ok', label:'Éxitos' }, { key:'errors', cls:'seg-bad', label:'Errores' }],
+    row => `${row.provider} · ${row.model}`, 'Todavía no hay generaciones en este periodo.', 'Generaciones por proveedor y modelo');
+
+  renderHBars('#consumedChart', '#consumedChartLegend', (stats.consumed || []).slice(0, 8),
+    [{ key:'views', cls:'seg-focus', label:'Vistas' }, { key:'interactions', cls:'seg-ok', label:'Interacciones' }],
+    row => row.entry_id, 'Todavía no hay tarjetas vistas en este periodo.', 'Tarjetas más vistas e interactuadas');
+
+  renderHBars('#searchChart', '#searchChartLegend',
+    (stats.searches || []).slice(0, 8).map(row => ({ ...row, withResults: Number(row.searches || 0) - Number(row.no_results || 0) })),
+    [{ key:'withResults', cls:'seg-focus', label:'Con resultados' }, { key:'no_results', cls:'seg-warn', label:'Sin resultados' }],
+    row => row.term, 'Todavía no hay búsquedas en este periodo.', 'Búsquedas frecuentes');
+
+  // Cambiar de periodo siempre vuelve a la primera página de cada tabla.
+  for (const key of Object.keys(STATS_GRIDS)) gridPages[key] = 0;
+  gridRows.providers = stats.providers || [];
+  gridRows.consumed = stats.consumed || [];
+  gridRows.searches = stats.searches || [];
+  gridRows.generated = stats.generatedTerms || [];
+  for (const key of Object.keys(STATS_GRIDS)) renderStatsGrid(key);
 }
 
 const MAINTENANCE = {

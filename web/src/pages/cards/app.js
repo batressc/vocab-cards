@@ -1,7 +1,7 @@
 /* Página de tarjetas: filtros, orden, scroll infinito, voz y acciones sobre tarjetas. */
 import { $, esc, store, fmtDateTime, toast, ADMIN_TOKEN_KEY } from '../../shared/utils.js';
 import { cardHTML, flip, initKnown, known, setAdminUnlocked, KINDS, safeKey } from '../../shared/card.js';
-import { observeCards, track } from '../../shared/telemetry.js';
+import { observeCards, stopCardViewTracking, track } from '../../shared/telemetry.js';
 export { cardHTML, flip };
 
 /* ================= Configuración del cliente ================= */
@@ -190,6 +190,7 @@ export function resetFeed(){
     // Se toma una foto de las aprendidas al iniciar la consulta para que la paginación sea estable.
     exclude: $('#hideKnown').checked && known.size ? [...known] : null
   });
+  stopCardViewTracking();
   grid.innerHTML = '';
   loadMore();
 }
@@ -377,6 +378,7 @@ async function deleteCard(card){
   if (!confirm(`¿Eliminar “${head}”? Esta acción no se puede deshacer.`)) return;
   try {
     await authed(`entries/${encodeURIComponent(id)}`, { method:'DELETE' });
+    stopCardViewTracking(card);
     card.remove();
     feed.shown--; feed.total--; feed.skip = Math.max(0, feed.skip - 1);
     known.delete(id); store.set('vocab-known', [...known]);
@@ -431,6 +433,7 @@ grid.addEventListener('click', e => {
     store.set('vocab-known', [...known]);
     track('known_changed', { entryId:id, value:known.has(id) });
     if ($('#hideKnown').checked && known.has(id)) {
+      stopCardViewTracking(card);
       card.remove(); feed.shown--; updateStatus(); maybeLoadMore(); return;
     }
     k.setAttribute('aria-pressed', known.has(id));

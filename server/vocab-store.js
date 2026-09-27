@@ -411,6 +411,9 @@ export class VocabStore {
       range, since, usage, generation,
       daily:all(`SELECT substr(created_at,1,10) day, COUNT(*) generations, SUM(outcome='success') successful, COALESCE(SUM(saved_count),0) saved
         FROM ai_generations WHERE (@since IS NULL OR created_at >= @since) GROUP BY day ORDER BY day`),
+      usageDaily:all(`SELECT substr(created_at,1,10) day, SUM(event_type='card_view') views, SUM(event_type='card_flip') flips,
+        SUM(event_type='audio_play') audios, SUM(event_type='search') searches
+        FROM usage_events WHERE (@since IS NULL OR created_at >= @since) GROUP BY day ORDER BY day`),
       providers:all(`SELECT provider, model, COUNT(*) generations, SUM(outcome='success') successful, COALESCE(SUM(saved_count),0) saved,
         ROUND(AVG(duration_ms)) average_duration_ms FROM ai_generations WHERE (@since IS NULL OR created_at >= @since)
         GROUP BY provider, model ORDER BY generations DESC, provider, model LIMIT 25`),

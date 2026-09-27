@@ -167,12 +167,19 @@ En **Administración → Estadísticas** se puede elegir 7, 30 o 90 días, o tod
 historial. El panel resume vistas e interacciones con tarjetas, búsquedas y
 búsquedas sin resultados, aprendizaje, generaciones diarias, resultados y
 duración por proveedor/modelo, términos generados y conversión a tarjetas
-guardadas. Son métricas orientativas: cada navegador usa un UUID anónimo
+guardadas. Gráficos con título y leyenda muestran las generaciones por día, la
+actividad de estudio por día, el resultado de las generaciones, el reparto por
+proveedor/modelo, las tarjetas más vistas y las búsquedas frecuentes. Las tablas
+se apilan una debajo de otra, se paginan de forma independiente y comparten un
+selector de registros por página (10, 15 o 20) que se conserva en el navegador.
+Una vista de tarjeta solo cuenta si la tarjeta permanece visible (≥50% del
+viewport) de forma continua durante al menos 5 segundos: el simple scroll no la
+registra. Son métricas orientativas: cada navegador usa un UUID anónimo
 persistente y un UUID por sesión. No se guardan IP, user-agent, tokens, prompts,
 hints ni respuestas de IA; únicamente términos normalizados de búsqueda o
 generación y los campos mínimos del evento.
 
-La misma pestaña contiene la **Zona de peligro**. Antes de actuar muestra los
+La pestaña **Zona de peligro** agrupa las limpiezas. Antes de actuar muestra los
 conteos vigentes, explica qué se conserva y exige una frase exacta. Se puede
 limpiar por separado tarjetas, auditoría (`imports` y acciones administrativas),
 métricas o reiniciar todo. Limpiar tarjetas incrementa una versión de datos que

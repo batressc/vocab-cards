@@ -330,6 +330,11 @@ test('agrega telemetría, deduplica vistas y actualiza el estado de aprendizaje'
   assert.equal(stats.usage.no_result_searches, 1);
   assert.equal(stats.learning.known, 1);
   assert.equal(stats.searches[0].term, 'give up');
+  assert.equal(stats.usageDaily.length, 1, 'la actividad diaria agrupa los eventos del mismo día');
+  assert.equal(stats.usageDaily[0].views, 1);
+  assert.equal(stats.usageDaily[0].searches, 1);
+  assert.equal(stats.usageDaily[0].flips, 0);
+  assert.equal(stats.usageDaily[0].audios, 0);
 });
 
 test('las limpiezas son separadas, idempotentes y mantienen la caché y el estado de seed', t => {
