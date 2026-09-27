@@ -473,6 +473,7 @@ function renderEntryModels(reset = false){
 }
 
 async function openEntry(id){
+  if (state.busy) return;
   try {
     const entry = await adminApi(`entries/${encodeURIComponent(id)}`);
     state.entries.selectedId = entry.id;
@@ -481,8 +482,7 @@ async function openEntry(id){
     $('#entryEditor').hidden = false;
     $('#entryEditorCurrent').textContent = `${entry.head} · ${entry.id}`;
     $('#entryInstructions').value = '';
-    $('#entryPreview').innerHTML = `<h3>Actual</h3>${cardHTML(entry, { admin:false })}`;
-    $('#entryPreviewActions').hidden = true;
+    renderEntryComparison();
     renderEntryModels(true);
     selectAdminTab('entries');
     loadEntries();
@@ -526,15 +526,55 @@ $('#entryPreview').addEventListener('click', e => {
 
 function setEntryBusy(busy){
   state.busy = busy;
-  for (const control of $('#entryEditor').querySelectorAll('button, textarea, select')) control.disabled = busy;
+  for (const control of $('#entryEditor').querySelectorAll('.entry-editor-head button, .entry-edit-form button, .entry-edit-form textarea, .entry-edit-form select, #entryPreviewActions button')) control.disabled = busy;
   if (!busy) renderEntryModels();
+}
+
+function emptyEntryPreviewHTML(){
+  return `<div class="entry-preview-empty">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M5 19h14"/></svg>
+    <strong>La nueva versión aparecerá aquí</strong>
+    <span>Genera una vista previa para compararla con la tarjeta actual.</span>
+  </div>`;
+}
+
+function renderEntryComparison(){
+  const current = state.entries.selected;
+  if (!current) return;
+  const candidate = state.entries.preview?.entry;
+  $('#entryPreview').innerHTML = `<div class="compare-grid">
+    <section class="compare-col" aria-labelledby="entryCurrentTitle">
+      <h3 id="entryCurrentTitle">Actual</h3>
+      ${cardHTML(current, { admin:false })}
+    </section>
+    <section class="compare-col" aria-labelledby="entryCandidateTitle">
+      <h3 id="entryCandidateTitle">Nueva versión</h3>
+      <div class="entry-preview-surface" id="entryCandidateSurface" aria-busy="false">
+        <div class="entry-preview-content" id="entryCandidateContent">${candidate ? cardHTML(candidate, { admin:false }) : emptyEntryPreviewHTML()}</div>
+        <div class="entry-preview-loader" id="entryCandidateLoader" role="status" aria-live="polite" aria-atomic="true" hidden>
+          <span class="spinner" aria-hidden="true"></span><span>Generando la nueva versión…</span>
+        </div>
+      </div>
+    </section>
+  </div>
+  <p class="entry-preview-status" id="entryPreviewStatus" role="status" aria-live="polite" aria-atomic="true"></p>
+  <p class="hint" id="entryPreviewMeta"></p>`;
+  $('#entryPreviewActions').hidden = !candidate;
+}
+
+function setEntryPreviewLoading(loading){
+  const surface = $('#entryCandidateSurface');
+  surface.classList.toggle('is-loading', loading);
+  surface.setAttribute('aria-busy', String(loading));
+  $('#entryCandidateLoader').hidden = !loading;
 }
 
 async function generateEntryEdit(){
   if (!state.entries.selected || state.busy) return;
   setEntryBusy(true);
-  $('#entryPreviewActions').hidden = true;
-  $('#entryPreview').innerHTML = '<p><span class="spinner" aria-hidden="true"></span>Generando una nueva versión…</p>';
+  $('#entryPreviewStatus').classList.remove('bad');
+  $('#entryPreviewStatus').textContent = '';
+  setEntryPreviewLoading(true);
   try {
     const result = await adminApi('ai/edit', { method:'POST', body:JSON.stringify({
       entryId:state.entries.selected.id,
@@ -545,15 +585,17 @@ async function generateEntryEdit(){
     }) });
     const candidate = result.items[0].entry;
     state.entries.preview = { entry:candidate, source:result.source };
-    $('#entryPreview').innerHTML = `<div class="compare-grid">
-      <section class="compare-col"><h3>Actual</h3>${cardHTML(state.entries.selected, { admin:false })}</section>
-      <section class="compare-col"><h3>Nueva versión</h3>${cardHTML(candidate, { admin:false })}</section>
-    </div><p class="hint">Generado con ${esc(result.label)} (${esc(result.model)}).</p>`;
+    $('#entryCandidateContent').innerHTML = cardHTML(candidate, { admin:false });
+    setEntryPreviewLoading(false);
+    $('#entryPreviewStatus').textContent = 'La nueva versión está lista para revisar.';
+    $('#entryPreviewMeta').textContent = `Generado con ${result.label} (${result.model}).`;
     $('#entryPreviewActions').hidden = false;
     $('#entrySave').focus();
   } catch (err) {
-    state.entries.preview = null;
-    $('#entryPreview').innerHTML = `<p class="bad">${esc(err.message)}</p>`;
+    setEntryPreviewLoading(false);
+    const status = $('#entryPreviewStatus');
+    status.classList.add('bad');
+    status.textContent = err.message;
   } finally { setEntryBusy(false); }
 }
 
@@ -578,8 +620,8 @@ $('#entrySave').addEventListener('click', async () => {
     state.entries.selected = result.entry;
     state.entries.preview = null;
     $('#entryEditorCurrent').textContent = `${result.entry.head} · ${result.entry.id}`;
-    $('#entryPreviewActions').hidden = true;
-    $('#entryPreview').innerHTML = '<p class="done">Los cambios se guardaron correctamente.</p>';
+    renderEntryComparison();
+    $('#entryPreviewStatus').textContent = 'Los cambios se guardaron correctamente.';
     selectAdminTab('entries');
     await loadEntries();
     toast(`Se guardó “${result.entry.head}”.`);
