@@ -13,6 +13,9 @@ Otras funciones:
 - **Medir y mantener:** estadísticas anónimas de estudio y generaciones IA, más limpiezas administrativas separadas para tarjetas, auditoría, métricas o todo el estado gestionado.
 - **Respaldar y restaurar:** copias SQLite completas, consistentes y protegidas por la clave administrativa; la restauración recupera todo el estado de la aplicación.
 
+> **Imagen Docker publicada:** la imagen oficial está disponible en [Docker Hub: `batressc/english-cards`](https://hub.docker.com/r/batressc/english-cards).
+> Para instrucciones especiales de despliegue con Docker y Proxmox VE, consulta [`README-DOCKER-PROXMOX.md`](README-DOCKER-PROXMOX.md).
+
 ## Tecnologías
 
 | Capa | Tecnología |
@@ -232,6 +235,9 @@ estas cabeceras ni esta lógica se aplica a otros proveedores. Cada intento de
 envío cuenta, incluso si OpenCode Go devuelve un error o no responde.
 
 ## Despliegue con Docker Compose en Proxmox/LXC
+
+La imagen publicada está en [`batressc/english-cards`](https://hub.docker.com/r/batressc/english-cards).
+Para la guía completa de Docker y Proxmox VE, incluyendo despliegue con imagen OCI en LXC, revisa [`README-DOCKER-PROXMOX.md`](README-DOCKER-PROXMOX.md).
 
 Ejecuta una sola réplica. SQLite usa WAL y necesita que se conserve **todo
 `/data`**; dos contenedores sobre el mismo archivo no constituyen un despliegue
